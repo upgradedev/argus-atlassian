@@ -25,7 +25,10 @@ jobs:
         run: pip install pyyaml
 
       - name: Unit and contract tests
-        run: node --test tests/
+        # Bare `node --test` on purpose: a directory argument works in
+        # Node 20 on Windows but Node 24 on Linux resolves it as a module
+        # path and fails before running anything (first CI run, 2026-11-03).
+        run: node --test
 
       - name: Socratic Kill-Test benchmark (fails unless 20/20 separate)
         run: node scripts/run_killtest_benchmark.js
@@ -59,4 +62,6 @@ jobs:
           node-version: 24
 
       - name: Forge lint (expected to demand app.id until forge register)
-        run: npx -y @forge/cli@latest lint
+        env:
+          CI: 'true'
+        run: printf 'no\n' | npx -y @forge/cli@latest lint

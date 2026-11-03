@@ -29,7 +29,7 @@ judge it in your browser. Nothing leaves the page.
 
 | Surface | State today |
 |---|---|
-| Domain core (canary, change IR, evidence, provenance, receipts, standby, shield, rules r01-r20) | Implemented and tested. `node --test tests/` gives 62 pass, 0 fail |
+| Domain core (canary, change IR, evidence, provenance, receipts, standby, shield, rules r01-r20) | Implemented and tested. `node --test` gives 62 pass, 0 fail |
 | Kill-test benchmark | Implemented. `node scripts/run_killtest_benchmark.js` gives rules accepted 20/20 on Argus synthetic fixtures. It is a fixture separation result, not a field measurement |
 | Forge manifest | Written and gate-checked. Zero egress, Rovo agent plus MCP plus skill. Not deployed: `app.id` arrives when the owner runs `forge register` on the Atlassian dev site |
 | Live Atlassian reads | Reader adapter implemented behind an injected client and unit tested with a fake client. Not yet exercised against a live site |
@@ -137,7 +137,7 @@ gate. No install is needed for the tests themselves.
 ```bash
 git clone https://github.com/upgradedev/argus-atlassian
 cd argus-atlassian
-node --test tests/
+node --test
 ```
 
 Expected: `# pass 62` and `# fail 0` (measured 2026-11-03). Under a minute.
@@ -212,7 +212,7 @@ Every number below names its command. Re-run them; do not take our word.
 
 | Claim | Command | Result on 2026-11-03 |
 |---|---|---|
-| Core and adapter tests | `node --test tests/` | 62 pass, 0 fail |
+| Core and adapter tests | `node --test` | 62 pass, 0 fail |
 | Rule separation | `node scripts/run_killtest_benchmark.js` | 20/20 accepted; badge-only check thrown out 20/20; scope is synthetic fixtures |
 | Manifest shape | `python scripts/check_manifest.py` | 0 FAIL, 1 USER-GATED (`app.id`) |
 | Python twin still green | `python -m unittest discover` in the sister core | 39 tests OK; shared digests pinned in this repo tests |
