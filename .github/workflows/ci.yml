@@ -34,6 +34,13 @@ jobs:
         # path and fails before running anything (first CI run, 2026-11-03).
         run: node --test
 
+      - name: Coverage gate, src only, lines at or above 85 (STANDARDS C1)
+        run: >-
+          node --experimental-test-coverage
+          --test-coverage-include='src/**/*.js'
+          --test-coverage-lines=85
+          --test
+
       - name: Socratic Kill-Test benchmark (fails unless 20/20 separate)
         run: node scripts/run_killtest_benchmark.js
 
