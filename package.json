@@ -1,0 +1,20 @@
+{
+  "name": "argus-atlassian",
+  "version": "0.1.0",
+  "description": "Argus for Jira, JSM and Bitbucket: a Forge app that exposes fake-green CI gates with a Socratic canary kill-test",
+  "license": "MIT",
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  },
+  "main": "src/index.js",
+  "scripts": {
+    "test": "node --test tests/",
+    "benchmark": "node scripts/run_killtest_benchmark.js",
+    "check-manifest": "python scripts/check_manifest.py",
+    "build-demo": "node scripts/build_demo.js"
+  },
+  "dependencies": {
+    "@forge/api": "^8.4.0"
+  }
+}

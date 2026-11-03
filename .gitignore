@@ -1,0 +1,15 @@
+node_modules/
+temp/
+.forge/
+.env
+.env.*
+/~/
+*.log
+
+# Workspace coordination files (four-file protocol). They live in this
+# directory on the maintainer machine and are never committed to the
+# shipped product repository.
+/AGENTS.md
+/STATE.md
+/LOG.md
+/TRAPS.md

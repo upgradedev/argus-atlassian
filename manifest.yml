@@ -1,0 +1,302 @@
+# Argus for Jira, JSM & Bitbucket (Atlassian Codegeist 2026, Apps for Software Teams)
+#
+# Zero Egress, for Runs on Atlassian eligibility. Verified 2026-11-03 against
+# https://developer.atlassian.com/platform/forge/runs-on-atlassian-apps/
+# ("Eligible apps do not list any of the following in the manifest: External
+# resource domains ... Remotes, Connect modules, Providers, Dynamic web
+# triggers"). This manifest goes further than the badge minimum:
+#   - no `permissions.external` block at all (not even analytics fetch),
+#   - no `remotes:`, `providers:`, `endpoint:`, `connectModules:`,
+#   - no `webtrigger` module (not even a static one),
+#   - no self-hosted icon URLs,
+#   - the only storage is data residency enabled Forge storage (`storage:app`).
+# Zero Egress is therefore declared by omission, which is the mechanism the
+# Forge platform enforces at install time. `scripts/check_manifest.py` fails
+# the build if any egress surface is added back.
+# Note: the JOIN instruction cited "Zero Egress (TRAPS.md T1)". In this repo
+# TRAPS.md T1 is the Forge installation link trap, not egress. The authority
+# used here is the Atlassian page above, plus TRAPS.md T2 for rovo pairing.
+#
+# app.id is intentionally absent. Atlassian assigns it: "The Forge CLI
+# supplies this identifier when you create or register an app for the first
+# time" (manifest reference, App). Run `forge register` once the owner-gated
+# Atlassian Cloud Developer site exists. Until then this file
+# is registry-complete but not deployable, and no fake app id is invented.
+
+app:
+  runtime:
+    name: nodejs24.x
+
+modules:
+  # --- JSM Change / Incident + Jira issue surface --------------------------
+  # JSM incidents and change requests are Jira issues, so the issue panel is
+  # the panel the on-call lead already has open in JSM and Jira.
+  jira:issuePanel:
+    - key: argus-jsm-incident-panel
+      title: Argus Canary Evidence
+      resource: argus-ui
+      resolver:
+        function: resolver
+
+  # JSM queue surface: standby on-call roster and failover state.
+  jiraServiceManagement:queuePage:
+    - key: argus-jsm-queue-page
+      title: Argus Standby On-Call
+      resource: argus-ui
+      resolver:
+        function: resolver
+
+  # --- Bitbucket PR Socratic Canary checks ---------------------------------
+  bitbucket:mergeCheck:
+    - key: argus-socratic-canary-merge-check
+      function: socraticCanaryMergeCheck
+      name: Argus Socratic Canary
+      description: >-
+        Runs the Elenchos Socratic Kill-Test against this pull request. A
+        fake-green pipeline fails the check; a clean pipeline passes it.
+      triggers:
+        - on-code-pushed
+        - on-merge
+
+  bitbucket:repoPullRequestOverviewPanel:
+    - key: argus-pr-canary-panel
+      title: Argus Socratic Canary
+      resource: argus-ui
+      resolver:
+        function: resolver
+
+  # --- Compass scorecards ----------------------------------------------------
+  compass:componentPage:
+    - key: argus-compass-scorecard-page
+      title: Argus Scorecard Evidence
+      resource: argus-ui
+      resolver:
+        function: resolver
+
+  # Sends canary events and metrics that feed Compass scorecards when a
+  # Bitbucket repository link is added to a component. `domains` here is link
+  # matching for the provider, not a fetch egress permission.
+  compass:dataProvider:
+    key: argus-compass-data-provider
+    function: compassDataProvider
+    callback:
+      function: compassDataProviderCallback
+    linkTypes:
+      - repository
+    domains:
+      - bitbucket.org
+
+  # --- Confluence post-incident pages ---------------------------------------
+  confluence:spacePage:
+    - key: argus-post-incident-page
+      title: Argus Post-Incident Report
+      resource: argus-ui
+      resolver:
+        function: resolver
+
+  # --- Autonomous trigger -----------------------------------------------------
+  # Fires when a JSM incident or Jira issue is created or updated, with no one
+  # asking first. The trigger is the product, not a button.
+  trigger:
+    - key: argus-jsm-incident-trigger
+      function: onIssueEvent
+      events:
+        - avi:jira:created:issue
+        - avi:jira:updated:issue
+      filter:
+        ignoreSelf: true
+
+  # --- Rovo pair (TRAPS.md T2: declare both, or forfeit the MCP bonus) -------
+  rovo:agent:
+    - key: argus-incident-governor
+      name: Argus Incident Governor
+      description: >-
+        Links a JSM incident to the Bitbucket pipeline that caused it, runs
+        the Socratic Canary Kill-Test, and proposes a verified repair.
+      prompt: |
+        You are Argus, an incident governor for software teams. You link JSM
+        incidents to Bitbucket pipelines, run the Socratic Canary Kill-Test,
+        and propose repairs as Typed Change IR.
+        Rules you never break:
+        1. Never state a canary verdict you did not get from the
+           run-canary-kill-test action in this conversation.
+        2. Never approve your own proposal. A write happens only through
+           escalate-standby-responder, and only with a human supplied
+           SHA-256 approval digest of the exact plan.
+        3. If an action reports not-implemented or an error, say so plainly
+           and stop. Do not fill the gap with a plausible answer.
+      conversationStarters:
+        - Run the canary kill-test for this incident
+        - Trace which pipeline run caused this incident
+        - Propose a verified repair for this fake-green gate
+      actions:
+        - run-canary-kill-test
+        - trace-incident-provenance
+        - propose-typed-change
+        - escalate-standby-responder
+      skills:
+        - argus-socratic-canary-skill
+
+  # At most one rovo:mcp module per app. External MCP exposure is disabled by
+  # default and enabled per tool by a site admin (rovo-mcp reference), so
+  # listing a write action here does not publish it.
+  rovo:mcp:
+    - key: argus-evidence-mcp-server
+      name: Argus Evidence MCP
+      tools:
+        - run-canary-kill-test
+        - trace-incident-provenance
+        - propose-typed-change
+        - escalate-standby-responder
+
+  # Same skill directory serves external coding agents (Agent Skills open
+  # spec, TRAPS.md T2) and the Forge Rovo Agent above (skills property).
+  # Directory and SKILL.md name are `argus-canary` because the spec requires
+  # the frontmatter name to match the directory name; the module key keeps
+  # the longer bonus category name.
+  rovo:skill:
+    - key: argus-socratic-canary-skill
+      source:
+        dir: skills/argus-canary
+      dependencies:
+        tools:
+          - run-canary-kill-test
+          - trace-incident-provenance
+          - propose-typed-change
+          - escalate-standby-responder
+
+  action:
+    - key: run-canary-kill-test
+      name: Run canary kill-test
+      function: runCanaryKillTest
+      actionVerb: TRIGGER
+      description: >-
+        Run the Elenchos Socratic Kill-Test (rules r01 to r20) for the
+        pipeline linked to this JSM or Jira issue. Returns a verdict only
+        from deterministic code, never from a model guess.
+      inputs:
+        issueKey:
+          title: Issue Key
+          type: string
+          required: true
+          description: The JSM incident or Jira issue key, for example OPS-123
+        pipelineYaml:
+          title: Pipeline YAML
+          type: string
+          required: false
+          description: >-
+            Optional bitbucket-pipelines.yml content. When supplied, the
+            Elenchos rules evaluate this exact text instead of the seed.
+    - key: trace-incident-provenance
+      name: Trace incident provenance
+      function: traceIncidentProvenance
+      actionVerb: GET
+      description: >-
+        Walk the provenance thread for this issue and return the linked
+        Bitbucket commit and pipeline run, Compass component, and Confluence
+        policy pages, with the evidence for each link.
+      inputs:
+        issueKey:
+          title: Issue Key
+          type: string
+          required: true
+          description: The JSM incident or Jira issue key, for example OPS-123
+    - key: propose-typed-change
+      name: Propose typed change
+      function: proposeTypedChange
+      actionVerb: CREATE
+      description: >-
+        Propose a Typed Change IR repair for a failing Elenchos rule. This
+        only creates a proposal. It changes nothing until a human approves
+        the exact plan digest.
+      inputs:
+        issueKey:
+          title: Issue Key
+          type: string
+          required: true
+          description: The JSM incident or Jira issue key, for example OPS-123
+        ruleId:
+          title: Rule Id
+          type: string
+          required: true
+          description: The failing Elenchos rule id, r01 through r20
+    - key: escalate-standby-responder
+      name: Escalate to standby responder
+      function: escalateStandbyResponder
+      actionVerb: UPDATE
+      description: >-
+        Fail over this JSM incident to the standby on-call responder. This is
+        a governed write and runs only when approvalDigest matches the
+        SHA-256 digest of the exact approved plan.
+      inputs:
+        issueKey:
+          title: Issue Key
+          type: string
+          required: true
+          description: The JSM incident or Jira issue key, for example OPS-123
+        approvalDigest:
+          title: Approval Digest
+          type: string
+          required: true
+          description: >-
+            Lowercase hex SHA-256 digest of the exact plan a human approved.
+            A digest of anything else must be refused.
+
+  # Every handler below lives in src/index.js, the thin Forge adapter. The
+  # adapters call the pure domain core in src/argus/, which imports no Forge,
+  # Atlassian, or LLM SDK (AGENTS.md, STANDARDS.md A5).
+  function:
+    - key: resolver
+      handler: index.resolver
+    - key: socraticCanaryMergeCheck
+      handler: index.socraticCanaryMergeCheck
+    - key: compassDataProvider
+      handler: index.compassDataProvider
+    - key: compassDataProviderCallback
+      handler: index.compassDataProviderCallback
+    - key: onIssueEvent
+      handler: index.onIssueEvent
+    - key: runCanaryKillTest
+      handler: index.runCanaryKillTest
+    - key: traceIncidentProvenance
+      handler: index.traceIncidentProvenance
+    - key: proposeTypedChange
+      handler: index.proposeTypedChange
+    - key: escalateStandbyResponder
+      handler: index.escalateStandbyResponder
+
+resources:
+  - key: argus-ui
+    path: static/argus-ui/build
+
+permissions:
+  # Scope strings verified 2026-11-03 against the Forge scope references for
+  # Forge, Jira, JSM, Bitbucket, Compass, and Confluence. Forge grants one
+  # union scope set per app, so the Reader / Evaluator / Writer split
+  # (AGENTS.md A7) is enforced inside src/argus/, not by separate manifests.
+  scopes:
+    # Forge platform. storage:app is the data residency enabled storage the
+    # Runs on Atlassian eligibility page requires.
+    - storage:app
+    - read:chat:rovo
+    # Jira and JSM (issue panel, queue page, incident trigger, standby failover)
+    - read:jira-work
+    - write:jira-work
+    - read:jira-user
+    - read:servicedesk-request
+    - write:servicedesk-request
+    # Bitbucket (read:pullrequest:bitbucket is required by bitbucket:mergeCheck)
+    - read:pullrequest:bitbucket
+    - write:pullrequest:bitbucket
+    - read:repository:bitbucket
+    # Compass (component page plus scorecard events and metrics)
+    - read:component:compass
+    - write:component:compass
+    - write:event:compass
+    - write:metric:compass
+    # Confluence (post-incident pages)
+    - read:page:confluence
+    - write:page:confluence
+  # Zero Egress: there is no external permissions block in this file, by
+  # design. The test for this is `python scripts/check_manifest.py`, not
+  # this comment (the checker inspects the parsed structure).

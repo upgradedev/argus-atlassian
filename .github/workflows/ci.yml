@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install manifest checker dependency
+        run: pip install pyyaml
+
+      - name: Unit and contract tests
+        run: node --test tests/
+
+      - name: Socratic Kill-Test benchmark (fails unless 20/20 separate)
+        run: node scripts/run_killtest_benchmark.js
+
+      - name: Manifest gate (zero egress, Rovo pairing, skill shape)
+        run: python scripts/check_manifest.py
+
+      - name: Generated demo is fresh
+        run: |
+          node scripts/build_demo.js
+          git diff --exit-code -- demo docs static
+
+      - name: Secret scan
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # USER-GATED: this job cannot pass until the owner provisions the
+  # Atlassian Cloud dev site and `forge register` writes app.id into
+  # manifest.yml. It runs on every push and its failure is shown, not
+  # hidden: continue-on-error keeps the evidence without letting an
+  # owner-gated step block the real test gate above.
+  forge-lint-user-gated:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Forge lint (expected to demand app.id until forge register)
+        run: npx -y @forge/cli@latest lint
