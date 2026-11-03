@@ -27,4 +27,4 @@ jobs:
         run: npx -y @forge/cli@latest settings set usage-analytics false
 
       - name: Forge lint
-        run: npx -y @forge/cli@latest lint --non-interactive
+        run: npx -y @forge/cli@latest lint
