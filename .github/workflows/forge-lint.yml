@@ -1,0 +1,30 @@
+name: Forge lint (user-gated)
+
+# USER-GATED, manual only. This cannot pass until the owner provisions
+# the Atlassian Cloud Developer site and `forge register` writes app.id
+# into manifest.yml. It is deliberately not a pull request check: an
+# owner-gated step must be printed separately, never counted as a pass
+# and never allowed to block the real CI gate with permanent red.
+# Dispatch it from the Actions tab after registering the app.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  forge-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Silence the first-run analytics consent prompt
+        run: npx -y @forge/cli@latest settings set usage-analytics false
+
+      - name: Forge lint
+        run: npx -y @forge/cli@latest lint --non-interactive

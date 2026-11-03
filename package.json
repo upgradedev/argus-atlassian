@@ -9,7 +9,7 @@
   },
   "main": "src/index.js",
   "scripts": {
-    "test": "node --test tests/",
+    "test": "node --test",
     "benchmark": "node scripts/run_killtest_benchmark.js",
     "check-manifest": "python scripts/check_manifest.py",
     "build-demo": "node scripts/build_demo.js"
