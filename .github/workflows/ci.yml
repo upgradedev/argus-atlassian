@@ -13,7 +13,7 @@ jobs:
     steps:
       # fetch-depth 0: gitleaks scans a commit range and fails on the
       # default shallow checkout in pull request runs (first CI, 2026-11-03).
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 

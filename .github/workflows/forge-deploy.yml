@@ -60,7 +60,7 @@ jobs:
       ATLASSIAN_SITE_URL: ${{ secrets.ATLASSIAN_SITE_URL }}
       FORGE_ENVIRONMENT: ${{ inputs.environment }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v4
         with:
