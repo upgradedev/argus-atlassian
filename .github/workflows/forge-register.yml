@@ -57,7 +57,9 @@ jobs:
         run: npm install --package-lock-only --ignore-scripts
 
       - name: Register the app
-        run: forge register "$APP_NAME" --non-interactive
+        # The current CLI rejects --non-interactive for this command.
+        # Supplying the name positionally is the non-interactive path.
+        run: forge register "$APP_NAME"
 
       - name: Prove app.id was written and lint now passes schema
         run: |
