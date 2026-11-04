@@ -13,6 +13,11 @@ on:
         required: true
         default: Argus for Jira JSM and Bitbucket
         type: string
+      developerSpaceName:
+        description: Developer Space to create only when the account has none
+        required: true
+        default: Upgrade Dev
+        type: string
 
 permissions:
   contents: write
@@ -29,6 +34,7 @@ jobs:
       FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
       FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
       APP_NAME: ${{ inputs.appName }}
+      DEVELOPER_SPACE_NAME: ${{ inputs.developerSpaceName }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -52,6 +58,15 @@ jobs:
         run: |
           forge settings set usage-analytics false
           forge whoami >/dev/null
+
+      - name: Ensure a Developer Space exists
+        # Registration on 2026-11-04 proved this account starts with no
+        # Developer Space. Create is explicit here rather than letting
+        # forge register prompt for a name in a non-TTY runner.
+        run: |
+          if ! forge developer-spaces show >/dev/null 2>&1; then
+            forge developer-spaces create --name "$DEVELOPER_SPACE_NAME" --non-interactive
+          fi
 
       - name: Resolve the dependency lockfile
         run: npm install --package-lock-only --ignore-scripts
