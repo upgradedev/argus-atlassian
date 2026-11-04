@@ -1,0 +1,47 @@
+name: Refresh package lockfile (manual)
+
+# The maintainer machine does not run local installs. This workflow is
+# the one supported way to create or refresh package-lock.json: it opens
+# a review pull request instead of committing straight to main.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: package-lock
+  cancel-in-progress: false
+
+jobs:
+  lockfile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Resolve locked dependencies
+        run: npm install --package-lock-only --ignore-scripts
+
+      - name: Open lockfile pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git switch -C chore/package-lock
+          git add package-lock.json package.json
+          git diff --cached --quiet && { echo 'Lockfile already current.'; exit 0; }
+          git commit -m 'chore(deps): add npm dependency lockfile'
+          git push --force-with-lease origin chore/package-lock
+          gh pr create \
+            --title 'chore(deps): add npm dependency lockfile' \
+            --body 'Generated in GitHub Actions with npm install --package-lock-only --ignore-scripts. Required for deterministic npm ci in the Forge deploy workflow.' \
+            || gh pr view chore/package-lock --json url --jq .url

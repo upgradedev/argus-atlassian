@@ -17,13 +17,12 @@
 # TRAPS.md T1 is the Forge installation link trap, not egress. The authority
 # used here is the Atlassian page above, plus TRAPS.md T2 for rovo pairing.
 #
-# app.id is intentionally absent. Atlassian assigns it: "The Forge CLI
-# supplies this identifier when you create or register an app for the first
-# time" (manifest reference, App). Run `forge register` once the owner-gated
-# Atlassian Cloud Developer site exists. Until then this file
-# is registry-complete but not deployable, and no fake app id is invented.
+# app.id was assigned by Atlassian during the one-time Forge registration
+# workflow on 2026-11-04. It is a public app resource identifier, not a
+# credential. Never replace it by hand: a different id is a different app.
 
 app:
+  id: ari:cloud:ecosystem::app/ac05e4a1-0aec-4e29-a115-fdcb127c82bd
   runtime:
     name: nodejs24.x
 
@@ -34,6 +33,7 @@ modules:
   jira:issuePanel:
     - key: argus-jsm-incident-panel
       title: Argus Canary Evidence
+      icon: resource:argus-ui;argus-icon.svg
       resource: argus-ui
       resolver:
         function: resolver
@@ -77,19 +77,20 @@ modules:
   # Bitbucket repository link is added to a component. `domains` here is link
   # matching for the provider, not a fetch egress permission.
   compass:dataProvider:
-    key: argus-compass-data-provider
-    function: compassDataProvider
-    callback:
-      function: compassDataProviderCallback
-    linkTypes:
-      - repository
-    domains:
-      - bitbucket.org
+    - key: argus-compass-data-provider
+      function: compassDataProvider
+      callback:
+        function: compassDataProviderCallback
+      linkTypes:
+        - repository
+      domains:
+        - bitbucket.org
 
   # --- Confluence post-incident pages ---------------------------------------
   confluence:spacePage:
     - key: argus-post-incident-page
       title: Argus Post-Incident Report
+      route: argus-post-incident-report
       resource: argus-ui
       resolver:
         function: resolver
@@ -357,7 +358,9 @@ permissions:
     - read:jira-user
     - read:servicedesk-request
     - write:servicedesk-request
-    # Bitbucket (read:pullrequest:bitbucket is required by bitbucket:mergeCheck)
+    # Bitbucket (read:pullrequest:bitbucket is required by bitbucket:mergeCheck;
+    # admin is required by Atlassian just to GET branch restrictions)
+    - admin:repository:bitbucket
     - read:pullrequest:bitbucket
     - write:pullrequest:bitbucket
     - read:repository:bitbucket
