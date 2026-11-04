@@ -1,9 +1,10 @@
 'use strict';
 
-// Builds the single-file Argus demo page used in three places:
-//   demo/index.html                  (canonical generated demo)
-//   docs/index.html                  (GitHub Pages judge mirror)
-//   static/argus-ui/build/index.html (Forge Custom UI resource)
+// Builds the Argus demo page used in three places, each as
+// index.html + app.css + app.js (Forge Custom UI CSP blocks inline code):
+//   demo/                  (canonical generated demo)
+//   docs/                  (GitHub Pages judge mirror)
+//   static/argus-ui/build/ (Forge Custom UI resource)
 // The page bundles the REAL domain modules (errors, canary, rules,
 // pipeline_facts) with a tiny CommonJS shim, so the browser runs the
 // same code the Node tests prove. There is no second implementation
@@ -18,7 +19,9 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const ROOT = path.join(__dirname, '..');
-const DOMAIN_FILES = ['errors.js', 'canary.js', 'pipeline_facts.js', 'rules.js'];
+const DOMAIN_FILES = [
+  'errors.js', 'canary.js', 'pipeline_facts.js', 'rules.js', 'pipeline_repair.js',
+];
 
 function bundle() {
   const parts = [
@@ -38,6 +41,7 @@ function bundle() {
   }
   parts.push("const ArgusRules = __require('./rules.js');");
   parts.push("const ArgusFacts = __require('./pipeline_facts.js');");
+  parts.push("const ArgusRepair = __require('./pipeline_repair.js');");
   return parts.join('\n');
 }
 
@@ -75,7 +79,9 @@ textarea { width: 100%; min-height: 240px; padding: 10px; border: 1px solid #7a8
   font-size: 13px; }
 button { margin-top: 10px; background: #0052cc; color: #fff; border: 0; border-radius: 4px;
   padding: 10px 16px; font-size: 15px; font-weight: 600; cursor: pointer; }
+button.secondary { background: #ffffff; color: #0052cc; border: 1px solid #0052cc; margin-left: 8px; }
 button:focus-visible, textarea:focus-visible { outline: 3px solid #4c9aff; outline-offset: 2px; }
+.repair { font-size: 14px; margin: 8px 0 0; }
 .summary { margin: 22px 0 10px; font-size: 17px; font-weight: 700; }
 table { border-collapse: collapse; width: 100%; font-size: 14px; }
 th, td { border: 1px solid #dfe1e6; padding: 7px 9px; text-align: left; vertical-align: top; }
@@ -92,6 +98,8 @@ const UI_JS = `
   const summary = document.getElementById('summary');
   const tbody = document.getElementById('rows');
   const form = document.getElementById('run');
+  const repair = document.getElementById('repair');
+  const repairSummary = document.getElementById('repair-summary');
   function render() {
     const facts = ArgusFacts.extractPipelineFacts(input.value);
     const out = ArgusRules.evaluateRules(facts);
@@ -114,6 +122,16 @@ const UI_JS = `
     document.getElementById('passing').textContent = passing + '/20 rules passing';
   }
   form.addEventListener('submit', function (e) { e.preventDefault(); render(); });
+  repair.addEventListener('click', function () {
+    const result = ArgusRepair.repairPipelineYaml(input.value);
+    input.value = result.yaml;
+    repairSummary.textContent = result.applied.length
+      ? 'Applied and re-verified: ' + result.applied.join(', ') + '. '
+        + 'Still needs a human decision: ' + (result.unsupported.join(', ') || 'none') + '.'
+      : 'No safe deterministic repair applies. Still needs a human decision: '
+        + (result.unsupported.join(', ') || 'none') + '.';
+    render();
+  });
   input.addEventListener('input', render);
   render();
 })();
@@ -131,7 +149,7 @@ function page() {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Argus Socratic Canary: is your green pipeline real?</title>
-<style>${CSS}</style>
+<link rel="stylesheet" href="app.css">
 </head>
 <body>
 <a class="skip" href="#main">Skip to the demo</a>
@@ -146,7 +164,9 @@ function page() {
     <label for="yaml">bitbucket-pipelines.yml (edit it, the verdict updates as you type)</label>
     <textarea id="yaml" name="yaml" spellcheck="false">${escapeHtml(SAMPLE_YAML)}</textarea>
     <button type="submit">Run the kill-test</button>
+    <button id="repair" class="secondary" type="button">Apply safe deterministic repairs</button>
   </form>
+  <p id="repair-summary" class="repair" role="status" aria-live="polite"></p>
   <p id="summary" class="summary" role="status" aria-live="polite"></p>
   <p id="passing"></p>
   <table aria-label="Elenchos rule results">
@@ -160,23 +180,27 @@ function page() {
   separating a violating fixture (exit 1) from a clean one (exit 0) in the Socratic
   Kill-Test. A check that cannot separate the two is thrown out before a human sees it.</p>
 </main>
-<script>
-${bundle()}
-${UI_JS}
-</script>
+<script src="app.js" defer></script>
 </body>
 </html>
 `;
 }
 
-const outputs = [
-  path.join(ROOT, 'demo', 'index.html'),
-  path.join(ROOT, 'docs', 'index.html'),
-  path.join(ROOT, 'static', 'argus-ui', 'build', 'index.html'),
+const outputDirs = [
+  path.join(ROOT, 'demo'),
+  path.join(ROOT, 'docs'),
+  path.join(ROOT, 'static', 'argus-ui', 'build'),
 ];
-const html = page();
-for (const out of outputs) {
-  fs.mkdirSync(path.dirname(out), { recursive: true });
-  fs.writeFileSync(out, html, 'utf8');
-  process.stdout.write(`wrote ${path.relative(ROOT, out)} (${html.length} chars)\n`);
+const files = {
+  'index.html': page(),
+  'app.css': `/* Generated by scripts/build_demo.js. Do not edit by hand. */\n${CSS.trim()}\n`,
+  'app.js': `'use strict';\n/* Generated by scripts/build_demo.js. Do not edit by hand. */\n${bundle()}\n${UI_JS.trim()}\n`,
+};
+for (const dir of outputDirs) {
+  fs.mkdirSync(dir, { recursive: true });
+  for (const [name, content] of Object.entries(files)) {
+    const out = path.join(dir, name);
+    fs.writeFileSync(out, content, 'utf8');
+    process.stdout.write(`wrote ${path.relative(ROOT, out)} (${content.length} chars)\n`);
+  }
 }

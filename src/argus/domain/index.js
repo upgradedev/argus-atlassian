@@ -13,6 +13,7 @@ module.exports = {
   ...require('./ports.js'),
   ...require('./provenance.js'),
   ...require('./pipeline_facts.js'),
+  ...require('./pipeline_repair.js'),
   ...require('./receipts.js'),
   ...require('./rules.js'),
   ...require('./standby.js'),

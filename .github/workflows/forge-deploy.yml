@@ -1,0 +1,143 @@
+name: Forge deploy and install (manual)
+
+# Deploys the registered app and installs or upgrades it in selected
+# Atlassian products. Credentials come from repository secrets and are
+# never printed. Install failures stop the workflow; they are findings,
+# not warnings to absorb.
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Forge environment
+        required: true
+        default: production
+        type: choice
+        options:
+          - development
+          - staging
+          - production
+      installJira:
+        description: Install into Jira and JSM on the configured site
+        required: true
+        default: true
+        type: boolean
+      installConfluence:
+        description: Install into Confluence on the configured site
+        required: true
+        default: false
+        type: boolean
+      installCompass:
+        description: Install into Compass on the configured site
+        required: true
+        default: false
+        type: boolean
+      installBitbucket:
+        description: Install into a shared Bitbucket workspace
+        required: true
+        default: false
+        type: boolean
+      bitbucketWorkspace:
+        description: Shared Bitbucket workspace slug or URL (required only for Bitbucket)
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: forge-deploy-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    env:
+      FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
+      FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
+      ATLASSIAN_SITE_URL: ${{ secrets.ATLASSIAN_SITE_URL }}
+      FORGE_ENVIRONMENT: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Require a registered app id and lockfile
+        run: |
+          grep -Eq '^[[:space:]]*id:[[:space:]]*ari:cloud:ecosystem::app/' manifest.yml
+          test -f package-lock.json
+
+      - name: Install locked dependencies and Forge CLI
+        run: |
+          npm ci
+          npm install --global @forge/cli@latest
+
+      - name: Test before deploy
+        run: |
+          node --test
+          node scripts/run_killtest_benchmark.js
+
+      - name: Authenticate and lint
+        run: |
+          forge settings set usage-analytics false
+          forge whoami >/dev/null
+          forge lint
+
+      - name: Deploy
+        run: forge deploy --environment "$FORGE_ENVIRONMENT" --non-interactive --verbose
+
+      - name: Derive site host
+        id: site
+        run: |
+          python3 - <<'PY'
+          import os
+          from urllib.parse import urlparse
+          host = urlparse(os.environ['ATLASSIAN_SITE_URL']).hostname
+          if not host:
+              raise SystemExit('ATLASSIAN_SITE_URL secret has no host')
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as out:
+              out.write(f'host={host}\n')
+          PY
+
+      - name: Install into Jira and JSM
+        if: inputs.installJira
+        run: >-
+          forge install --site "${{ steps.site.outputs.host }}"
+          --product Jira --environment "$FORGE_ENVIRONMENT"
+          --confirm-scopes --non-interactive --verbose
+
+      - name: Install into Confluence
+        if: inputs.installConfluence
+        run: >-
+          forge install --site "${{ steps.site.outputs.host }}"
+          --product Confluence --environment "$FORGE_ENVIRONMENT"
+          --confirm-scopes --non-interactive --verbose
+
+      - name: Install into Compass
+        if: inputs.installCompass
+        run: >-
+          forge install --site "${{ steps.site.outputs.host }}"
+          --product Compass --environment "$FORGE_ENVIRONMENT"
+          --confirm-scopes --non-interactive --verbose
+
+      - name: Install into Bitbucket
+        if: inputs.installBitbucket
+        run: |
+          test -n "${{ inputs.bitbucketWorkspace }}"
+          workspace="${{ inputs.bitbucketWorkspace }}"
+          case "$workspace" in
+            http://*|https://*) site="$workspace" ;;
+            bitbucket.org/*) site="$workspace" ;;
+            *) site="bitbucket.org/$workspace" ;;
+          esac
+          forge install --site "$site" --product Bitbucket \
+            --environment "$FORGE_ENVIRONMENT" \
+            --confirm-scopes --non-interactive --verbose
+
+      - name: List installations
+        run: forge install list --json > installations.json && cat installations.json

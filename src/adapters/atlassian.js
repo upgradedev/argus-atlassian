@@ -11,9 +11,11 @@
 // verifyBeforeWrite, the same one check the Python core pins.
 
 const {
+  RefusedError,
   evaluateRules,
   extractPipelineFacts,
   guardReaderWriteAttempt,
+  repairPipelineYaml,
   verifyBeforeWrite,
 } = require('../argus/index.js');
 
@@ -27,6 +29,15 @@ class AdapterHttpError extends Error {
 
 function str(value) {
   return value === undefined || value === null ? '' : String(value);
+}
+
+function escapeHtml(value) {
+  return str(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
 }
 
 class AtlassianReader {
@@ -46,6 +57,49 @@ class AtlassianReader {
       'issue.assignee': str(fields.assignee?.accountId),
       'issue.updated': str(fields.updated),
     });
+  }
+
+  async fetchLinkedWork(incidentId) {
+    // Linked work is evidence of association, not causality. Every item
+    // is explicitly causal:false; calling it a root cause still requires
+    // the sealed provenance walk, not a hyperlink.
+    const issue = await this.client.getIssue(incidentId);
+    const links = [];
+    for (const link of issue.fields?.issuelinks ?? []) {
+      const linked = link.outwardIssue ?? link.inwardIssue;
+      if (!linked?.key) continue;
+      links.push(Object.freeze({
+        kind: 'jira-issue',
+        id: linked.key,
+        title: str(linked.fields?.summary),
+        relationship: str(link.type?.name),
+        causal: false,
+      }));
+    }
+
+    if (typeof this.client.getIssueRemoteLinks === 'function') {
+      const remoteLinks = await this.client.getIssueRemoteLinks(incidentId);
+      for (const link of remoteLinks ?? []) {
+        const url = str(link.object?.url);
+        if (!url) continue;
+        let kind = 'linked-work';
+        try {
+          const parsed = new URL(url);
+          if (parsed.hostname === 'bitbucket.org') kind = 'bitbucket';
+          else if (parsed.pathname.startsWith('/wiki/')) kind = 'confluence';
+        } catch {
+          kind = 'linked-work';
+        }
+        links.push(Object.freeze({
+          kind,
+          id: url,
+          title: str(link.object?.title),
+          relationship: str(link.relationship),
+          causal: false,
+        }));
+      }
+    }
+    return Object.freeze(links);
   }
 
   write() {
@@ -86,20 +140,94 @@ class AtlassianWriter {
       return Object.freeze({ executed: true, issueKey, assignedTo: standbyAccountId });
     });
   }
+
+  async openRepairPullRequest(change, approvedDigest, {
+    workspace,
+    repository,
+    sourceBranch = '',
+    pipelinePath = 'bitbucket-pipelines.yml',
+    issueKey = '',
+  } = {}) {
+    return this.execute(change, approvedDigest, async (client) => {
+      for (const method of ['getRepository', 'getBranch', 'getRepoFileText', 'commitTextFile', 'createPullRequest']) {
+        if (typeof client[method] !== 'function') {
+          throw new RefusedError(`Bitbucket client does not provide ${method}`);
+        }
+      }
+      if (!workspace || !repository) {
+        throw new RefusedError('workspace and repository are required for a repair PR');
+      }
+
+      const repo = await client.getRepository(workspace, repository);
+      const repoRef = repo?.uuid || repository;
+      const destinationBranch = sourceBranch || repo?.mainbranch?.name || 'main';
+      const base = await client.getBranch(workspace, repoRef, destinationBranch);
+      const parent = base?.target?.hash;
+      if (!parent) throw new RefusedError(`could not resolve parent commit for ${destinationBranch}`);
+
+      const currentYaml = await client.getRepoFileText(
+        workspace, repoRef, parent, pipelinePath,
+      );
+      const repair = repairPipelineYaml(currentYaml);
+      if (!change.preventionRule || !repair.applied.includes(change.preventionRule)) {
+        throw new RefusedError(
+          `deterministic repair does not clear ${change.preventionRule || 'the stored rule'}`,
+        );
+      }
+
+      const branch = `argus/${change.changeId}`.replace(/[^A-Za-z0-9._/-]/g, '-');
+      await client.commitTextFile({
+        workspaceId: workspace,
+        repoId: repoRef,
+        branch,
+        parent,
+        path: pipelinePath,
+        content: repair.yaml,
+        message: `fix(ci): ${change.title}${issueKey ? ` [${issueKey}]` : ''}`,
+      });
+      const head = await client.getBranch(workspace, repoRef, branch);
+      const pullRequest = await client.createPullRequest({
+        workspaceId: workspace,
+        repoId: repoRef,
+        title: `Argus verified repair: ${change.preventionRule}${issueKey ? ` (${issueKey})` : ''}`,
+        sourceBranch: branch,
+        destinationBranch,
+        description: [
+          'Opened by Argus after human approval of the exact Typed Change IR.',
+          `Change: ${change.changeId}`,
+          `Digest: ${change.digest()}`,
+          `Applied and re-verified: ${repair.applied.join(', ')}`,
+          `Still needs a human decision: ${repair.unsupported.join(', ') || 'none'}`,
+        ].join('\n'),
+      });
+
+      return Object.freeze({
+        executed: true,
+        branch,
+        destinationBranch,
+        parent,
+        commit: str(head?.target?.hash),
+        pullRequestId: pullRequest?.id ?? null,
+        pullRequestUrl: str(pullRequest?.links?.html?.href),
+        applied: repair.applied,
+        unsupported: repair.unsupported,
+      });
+    });
+  }
 }
 
 function buildPostIncidentPage({ issueKey, evaluation, seal = '', rootCause = '' }) {
   const failing = (evaluation?.results ?? []).filter((r) => !r.clean);
   const rows = failing.length === 0
     ? '<p>No Elenchos rule violations. The pipeline facts are clean.</p>'
-    : `<ul>${failing.map((r) => `<li><strong>${r.id}</strong> ${r.title}</li>`).join('')}</ul>`;
+    : `<ul>${failing.map((r) => `<li><strong>${escapeHtml(r.id)}</strong> ${escapeHtml(r.title)}</li>`).join('')}</ul>`;
   const bodyStorage = [
-    `<h1>Post-incident report for ${issueKey}</h1>`,
+    `<h1>Post-incident report for ${escapeHtml(issueKey)}</h1>`,
     '<h2>Elenchos violations</h2>',
     rows,
     '<h2>Provenance</h2>',
-    `<p>Root cause: ${rootCause || 'not traced'}.</p>`,
-    `<p>Provenance seal: ${seal || 'not sealed'}.</p>`,
+    `<p>Root cause: ${escapeHtml(rootCause || 'not traced')}.</p>`,
+    `<p>Provenance seal: ${escapeHtml(seal || 'not sealed')}.</p>`,
     '<p>Generated by Argus. Numbers come from the deterministic '
       + 'kill-test, not from a model summary.</p>',
   ].join('\n');
