@@ -3,7 +3,7 @@ name: argus-canary
 description: Run the Argus Socratic Canary Kill-Test for a JSM incident or Jira issue, trace the incident to the Bitbucket pipeline that caused it, propose a Typed Change IR repair, and fail over to the standby on-call responder under a human approval digest. Use when a pipeline looks green but an incident followed a release, or when someone asks whether a CI gate can be trusted.
 license: MIT
 compatibility: Requires the Argus Forge app installed on the Atlassian site, with its Rovo actions available. External MCP use needs a site admin to enable Argus tools for the app installation first.
-allowed-tools: run-canary-kill-test trace-incident-provenance propose-typed-change escalate-standby-responder
+allowed-tools: run-canary-kill-test trace-incident-provenance propose-typed-change escalate-standby-responder open-verified-repair-pr
 ---
 
 # Argus Socratic Canary
@@ -24,8 +24,9 @@ one, is thrown out before a human sees it.
    one governed write. It needs `approvalDigest`: the lowercase hex
    SHA-256 of the exact plan a human approved. If no human gave you one,
    stop and ask. A digest you made up is a forged approval.
-4. If a tool answers `seed-demo`, `refused`, or `dry-run`, report that
-   word to the user. Do not translate it into a pass.
+4. If a tool answers `seed-demo`, `refused`, `verified`,
+   `verified-dry-run`, or `executed`, report that exact word to the
+   user. Do not translate any of them into a pass.
 
 ## Workflow
 
@@ -45,8 +46,9 @@ back to commit, plus a hash-chain seal. Read it as follows.
   seed nodes because no Atlassian API adapter is connected yet. Say so.
   Seed nodes are not evidence about the user's site.
 - `status: partial-live` means the incident node came from the real
-  issue, but the commit and pipeline links are not walked yet. Name
-  what is live and what is missing, in that order.
+  issue. `linkedWork` may name real issues and remote links, and every
+  item is `causal: false`: a link is association, not proof of cause.
+  Do not promote a linked pull request into a root cause on that basis.
 
 ### 2. Test the gate: `run-canary-kill-test`
 
@@ -61,7 +63,9 @@ Returns a canary result and, when rules ran, an evaluation. Read both.
   title. `evaluation.clean: true` means all twenty passed on the facts
   the extractor could see; merge check enforcement (r13) comes from
   Bitbucket branch restrictions, not the YAML, and stays flagged until
-  the live adapter supplies it.
+  the live adapter supplies it. `repair` carries only rewrites that were
+  re-evaluated and actually cleared their rule; present repaired YAML
+  as a patch for review, never as already applied.
 - `violatingExit` must be 1 and `cleanExit` must be 0. `accepted: true`
   with any other pair is a contradiction; report the numbers as returned
   and flag the contradiction instead of picking one.
@@ -91,40 +95,62 @@ Inputs: `issueKey` (required), `ruleId` (required, `r01` through `r20`).
 
 Returns a Typed Change IR proposal. Read it as follows.
 
-- `status: proposal-only` and `executed: false` are the only healthy
-  outcome today. Show the `director` line to leads and the `standby`
-  line to the on-call engineer. They describe the same change.
-- `digest` is the content address of the proposal. A human approves
-  this exact value, or a digest of the exact plan they were shown.
-  One character of drift means a different plan.
+- `status: proposal-stored` means the exact plan is in Forge storage.
+  `proposal-only` with `storage: memory-ephemeral` means a non-Forge
+  runtime kept it only for that process. Both have `executed: false`.
+  Show the `director` line to leads and the `standby` line to the
+  on-call engineer. They describe the same change.
+- Keep `changeId`. `digest` is the content address of the proposal. A
+  human approves this exact value, or a digest of the exact plan they
+  were shown. One character of drift means a different plan.
 - `status: refused` means the IR rejected the input. Raw shell syntax
   such as `;`, `&&`, `|`, backticks, and `$(` in any field is refused by
   construction. Do not work around a refusal by rephrasing the same
   command into a different field. Report the refusal.
 
 An unknown rule id is refused by name. When you propose, cite the rule
-title from the response, not from memory. The proposal operation today
-is a notification typed op; the per-rule repair synthesis is later work,
-so describe the proposal as a governed proposal, not as a finished fix.
+title from the response, not from memory. The stored Typed Change IR
+names the exact pipeline facts that must change. Approving it assigns
+the standby responder to make that repair; the digest alone does not
+patch a repository.
 
 ### 4. Fail over only with a human digest: `escalate-standby-responder`
 
 Inputs: `issueKey` (required), `approvalDigest` (required, 64 lowercase
-hex characters).
+hex characters), plus optional `changeId`, `standbyAccountId`, and
+`elapsedSeconds`.
 
 Outcomes, in the only orders that are safe.
 
-- `status: refused`, `verified: false`, `executed: false`: the normal
-  answer while no approved plan is stored, no roster is configured, or
-  the digest shape is wrong. Report it and stop.
-- `status: dry-run` with `wouldPage`: the roster math ran and no write
-  happened. `escalated: true` means the ack window (900 seconds by
-  default) elapsed with no acknowledgement, so the next reachable
-  engineer would be paged. Say "would page", never "paged".
-- The executing writer path exists in the adapter and is unit tested,
-  but approved plans are not persisted yet, so this action still must
-  not reach `executed: true`. If you see it, treat it as a bug and say
-  so.
+- `status: refused`, `verified: false`, `executed: false`: no stored
+  proposal, a digest mismatch, an already executed plan, or a bad shape.
+  Report it and stop.
+- `status: verified`: the human digest matched the stored plan, but no
+  responder was selected, so nothing executed.
+- `status: verified-dry-run` with `wouldAssignTo`: the digest matched
+  and roster math selected a responder, but no live writer is connected.
+  Say "would assign", never "assigned".
+- `status: executed`, `executed: true`, with `receipt.root`: the issue
+  was assigned and a Merkle-sealed receipt was stored. Quote the last
+  six characters of the root when referring to the receipt.
+- Do not call this action twice with the same digest. An executed plan
+  refuses replay.
+
+### 5. Open the repair PR only after the same human approval
+
+Inputs: `issueKey`, `approvalDigest`, optional `changeId`, `workspace`,
+`repository`, `sourceBranch`, `pipelinePath`, and `pipelineYaml` for a
+dry-run preview.
+
+- `status: repair-pr-open` with a pull request id or URL means the
+  stored digest matched, the deterministic YAML rewrite was re-run
+  through the rules, a repair branch was committed, and the PR exists.
+- `status: verified-dry-run` may include repaired YAML. Show it as a
+  patch for review. It is not a branch and not a pull request.
+- A rewrite that does not clear the stored plan's own rule is refused.
+  Do not retry by hand-editing the claim.
+- Opening the PR and assigning the standby responder are separate
+  replay-guarded executions of the same approved stored plan.
 
 ## Error handling
 

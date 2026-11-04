@@ -4,7 +4,9 @@
 // These prove honesty properties, not happy paths: the seed is labelled
 // synthetic, no handler claims a live verdict, and the governed write
 // can never report executed=true while no Atlassian adapter is wired.
-// Run: node --test tests/
+// They also pin the external Forge contracts corrected in the 2026-11-04
+// UAT: resolver invoke dispatch and Bitbucket success/message only.
+// Run: node --test
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -35,10 +37,13 @@ test('propose: shell syntax in ruleId is refused by the Typed Change IR', async 
   assert.equal(out.executed, false);
 });
 
-test('propose: valid ruleId yields a proposal with digest and nothing executed', async () => {
+test('propose: valid ruleId stores a proposal with digest and nothing executed', async () => {
   const out = await adapter.proposeTypedChange({ issueKey: 'OPS-1', ruleId: 'r01' });
   assert.equal(out.status, 'proposal-only');
+  assert.equal(out.stored, true);
+  assert.equal(out.storage, 'memory-ephemeral');
   assert.equal(out.executed, false);
+  assert.match(out.changeId, /^proposal-OPS-1-r01-\d+$/);
   assert.match(out.digest, /^[0-9a-f]{64}$/);
 });
 
@@ -63,17 +68,32 @@ test('escalate: valid digest shape but no roster still refuses', async () => {
   assert.equal(out.executed, false);
 });
 
-test('escalate: with roster it is a dry run and pages the standby after the window', async () => {
+test('escalate: stored proposal verifies and dry-runs the standby after the window', async () => {
+  const proposal = await adapter.proposeTypedChange({ issueKey: 'OPS-77', ruleId: 'r01' });
   const out = await adapter.escalateStandbyResponder({
-    issueKey: 'OPS-1',
-    approvalDigest: 'a'.repeat(64),
+    issueKey: 'OPS-77',
+    changeId: proposal.changeId,
+    approvalDigest: proposal.digest,
     elapsedSeconds: 901,
-    roster: [{ id: 'e1', name: 'Nikos' }, { id: 'e2', name: 'Maria' }],
+    roster: [
+      { accountId: 'acc-primary', name: 'Nikos' },
+      { accountId: 'acc-standby', name: 'Maria' },
+    ],
   });
-  assert.equal(out.status, 'dry-run');
+  assert.equal(out.status, 'verified-dry-run');
+  assert.equal(out.verified, true);
   assert.equal(out.executed, false);
-  assert.equal(out.wouldPage, 'e2');
+  assert.equal(out.wouldAssignTo, 'acc-standby');
   assert.equal(out.escalated, true);
+});
+
+test('escalate: an invented digest against a stored proposal refuses', async () => {
+  await adapter.proposeTypedChange({ issueKey: 'OPS-78', ruleId: 'r01' });
+  const out = await adapter.escalateStandbyResponder({
+    issueKey: 'OPS-78', approvalDigest: 'a'.repeat(64), standbyAccountId: 'acc-standby',
+  });
+  assert.equal(out.status, 'refused');
+  assert.equal(out.executed, false);
 });
 
 test('kill-test evaluates supplied pipeline YAML with the real rules', async () => {
@@ -104,9 +124,31 @@ test('resolver reports the rule validation count from the real machine', async (
   assert.equal(out.rulesAccepted, '20/20');
 });
 
-test('resolver and merge check never claim live evidence', async () => {
-  for (const name of ['resolver', 'socraticCanaryMergeCheck', 'onIssueEvent']) {
-    const out = await adapter[name]();
-    assert.match(out.liveEvidence, /not-connected/, name);
-  }
+test('resolver dispatch evaluates pasted YAML through the invoke protocol', async () => {
+  const out = await adapter.resolver({
+    call: {
+      functionKey: 'evaluatePipeline',
+      payload: { pipelineYaml: 'image: node:latest\npipelines: {}' },
+    },
+    context: {},
+  });
+  assert.equal(out.status, 'evaluated-input');
+  assert.ok(out.evaluation.violations.includes('r18'));
+});
+
+test('merge check returns exactly the documented success and message fields', async () => {
+  const out = await adapter.socraticCanaryMergeCheck({
+    workspace: { uuid: '{ws}' },
+    repository: { uuid: '{repo}' },
+    pullrequest: { id: 42 },
+    trigger: { type: 'on-code-pushed' },
+  });
+  assert.deepEqual(Object.keys(out).sort(), ['message', 'success']);
+  assert.equal(out.success, false);
+  assert.match(out.message, /could not evaluate/);
+});
+
+test('issue trigger never claims live evidence without Forge', async () => {
+  const out = await adapter.onIssueEvent({ issue: { key: 'CST-1' } });
+  assert.match(out.liveEvidence, /not-connected/);
 });

@@ -29,12 +29,12 @@ judge it in your browser. Nothing leaves the page.
 
 | Surface | State today |
 |---|---|
-| Domain core (canary, change IR, evidence, provenance, receipts, standby, shield, rules r01-r20) | Implemented and tested. `node --test` gives 62 pass, 0 fail |
+| Domain core (canary, change IR, evidence, provenance, receipts, standby, shield, rules r01-r20) | Implemented and tested. `node --test` gives 99 pass, 0 fail |
 | Kill-test benchmark | Implemented. `node scripts/run_killtest_benchmark.js` gives rules accepted 20/20 on Argus synthetic fixtures. It is a fixture separation result, not a field measurement |
-| Forge manifest | Written and gate-checked. Zero egress, Rovo agent plus MCP plus skill. Not deployed: `app.id` arrives when the owner runs `forge register` on the Atlassian dev site |
-| Live Atlassian reads | Reader adapter implemented behind an injected client and unit tested with a fake client. Not yet exercised against a live site |
-| Governed writes | The digest-guarded writer path exists and is unit tested. The shipped action still cannot execute, because approved plans are not persisted yet. It refuses instead |
-| Repair PR opening | Proposal synthesis is real (Typed Change IR with a SHA-256 digest). Opening the Bitbucket PR is not wired yet |
+| Forge manifest | Written and gate-checked. Zero egress, Rovo agent plus MCP plus skill. `app.id` arrives from the one-time Forge register workflow |
+| Live Atlassian reads | Reader adapter implemented behind an injected client, including issue links and remote links labelled association rather than causality. Live exercise is part of the deployment UAT below |
+| Governed writes | Typed Change IR proposals persist in Forge KVS. Standby assignment executes only when the human digest matches the stored plan, seals a receipt, and refuses replay |
+| Repair PR opening | Implemented behind the same stored-plan digest. Argus rewrites the pipeline, re-evaluates all rules, refuses unless the stored rule clears, then commits a branch and opens the PR |
 | Teamwork Graph connector ingestion | Not implemented. The documented connector shape pairs with external fetch and an auth provider, which would break zero egress, so Argus walks issue and pull request links instead. Recorded as an open decision, not a quiet gap |
 | Anonymous demo | Live as a static page (link above). It evaluates YAML you paste. It never connects to your site |
 
@@ -140,7 +140,7 @@ cd argus-atlassian
 node --test
 ```
 
-Expected: `# pass 62` and `# fail 0` (measured 2026-11-03). Under a minute.
+Expected: `# pass 99` and `# fail 0` (measured 2026-11-04). Under a minute.
 
 ```bash
 node scripts/run_killtest_benchmark.js
@@ -178,7 +178,7 @@ source, so the browser and the panel cannot drift.
    Atlassian writes `app.id` into `manifest.yml`. We never ship an
    invented app id.
 4. `forge deploy`, then `forge install` into Jira, JSM, Bitbucket,
-   Compass, and Confluence on that site. Consent shows 16 scopes and
+   Compass, and Confluence on that site. Consent shows 17 scopes and
    zero external domains.
 5. In Bitbucket workspace settings, enable Custom merge checks and mark
    Argus Socratic Canary required where you want it to block merges.
@@ -212,7 +212,7 @@ Every number below names its command. Re-run them; do not take our word.
 
 | Claim | Command | Result on 2026-11-03 |
 |---|---|---|
-| Core and adapter tests | `node --test` | 62 pass, 0 fail |
+| Core and adapter tests | `node --test` | 99 pass, 0 fail |
 | Rule separation | `node scripts/run_killtest_benchmark.js` | 20/20 accepted; badge-only check thrown out 20/20; scope is synthetic fixtures |
 | Manifest shape | `python scripts/check_manifest.py` | 0 FAIL, 1 USER-GATED (`app.id`) |
 | Python twin still green | `python -m unittest discover` in the sister core | 39 tests OK; shared digests pinned in this repo tests |
@@ -232,7 +232,7 @@ EU AI Act (Regulation EU 2024/1689), by article, with the gap kept in.
 |---|---|---|
 | 10 (data) | Inputs are pipeline and issue facts inside the tenancy; rules are deterministic, no training data | Heuristic facts extraction can misread unusual YAML and must stay labelled as extracted facts |
 | 13 (transparency) | Every verdict names the rules, the exit codes, and whether evidence was live, pasted, or seed | The Rovo agent wording is model generated around those facts and can still phrase them badly |
-| 14 (human oversight) | The one write path needs a human supplied plan digest; proposals never self-approve | Digest persistence and identity binding arrive with the storage wiring |
+| 14 (human oversight) | Write paths need a human supplied digest matching a stored plan; proposals never self-approve; executions refuse replay and seal receipts | The digest proves plan integrity, not by itself the legal identity of the approver |
 | 15 (accuracy) | Rules must separate fixtures in the kill-test before they exist for users; benchmark ships in repo | Fixture separation is not field accuracy; no customer pipeline corpus has been measured |
 | 50 (disclosure) | Panels and demo state plainly when a result is seed or not connected | Marketplace listing copy still has to carry the same labels through review |
 
@@ -240,9 +240,12 @@ EU AI Act (Regulation EU 2024/1689), by article, with the gap kept in.
 
 ```text
 manifest.yml            Forge app: zero egress, Rovo pair plus skill
-src/index.js            thin Forge adapter (the only SDK aware layer)
+src/index.js            Forge handlers, seed fallbacks, live routing
+src/governance.js       stored plans, digest verification, receipts, replay guard
+src/resolver.js         @forge/resolver construction with a test fallback
+src/forge_events.js     documented Forge event parsers and merge-check replies
 src/argus/              pure domain core, zero vendor SDK imports
-src/adapters/           Atlassian reader and writer, Forge client factory
+src/adapters/           Atlassian, Compass, Forge client, KVS plan store
 skills/argus-canary/    Agent Skills SKILL.md, also the rovo:skill source
 tests/                  node:test suites for core, rules, handlers, adapters
 scripts/                kill-test benchmark, manifest gate, demo builder

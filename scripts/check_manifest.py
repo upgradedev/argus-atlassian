@@ -21,7 +21,8 @@ Checks:
      every module key unique.
   4. Surfaces exist: JSM/Jira panels, Bitbucket merge check + PR panel,
      Compass component page + data provider, Confluence space page, trigger.
-  5. Write gate: escalate-standby-responder requires approvalDigest.
+  5. Write gates: escalate-standby-responder and open-verified-repair-pr
+     both require approvalDigest against a stored plan.
   6. Clean room: zero em dashes, zero banned words or names.
   7. app.id: reported USER-GATED when absent (never a silent pass), format
      checked when present. Atlassian assigns it via `forge register`.
@@ -64,6 +65,8 @@ EXPECTED_SURFACES = {
 REQUIRED_SCOPES = {
     "storage:app",
     "read:pullrequest:bitbucket",  # required by bitbucket:mergeCheck
+    "write:repository:bitbucket",  # verified repair commits
+    "write:pullrequest:bitbucket",  # verified repair pull requests
     "read:servicedesk-request",
     "write:event:compass",
     "write:metric:compass",
@@ -270,11 +273,24 @@ def main():
     else:
         ok(f"scopes: {len(scopes)} declared, required subset present")
     escalate = actions.get("escalate-standby-responder") or {}
-    digest = (escalate.get("inputs") or {}).get("approvalDigest") or {}
+    escalate_inputs = escalate.get("inputs") or {}
+    digest = escalate_inputs.get("approvalDigest") or {}
     if digest.get("required") is not True:
         fail("escalate-standby-responder does not require approvalDigest input")
+    elif not {"changeId", "standbyAccountId", "elapsedSeconds"} <= set(escalate_inputs):
+        fail("escalate-standby-responder is missing stored-plan execution inputs")
     else:
-        ok("write gate: escalate-standby-responder requires approvalDigest")
+        ok("write gate: escalate-standby-responder requires approvalDigest "
+           "and declares stored-plan execution inputs")
+    repair = actions.get("open-verified-repair-pr") or {}
+    repair_inputs = repair.get("inputs") or {}
+    repair_digest = repair_inputs.get("approvalDigest") or {}
+    if repair_digest.get("required") is not True:
+        fail("open-verified-repair-pr does not require approvalDigest input")
+    elif not {"workspace", "repository", "pipelineYaml"} <= set(repair_inputs):
+        fail("open-verified-repair-pr is missing repository or dry-run inputs")
+    else:
+        ok("write gate: open-verified-repair-pr requires approvalDigest")
 
     # 6. Clean room -------------------------------------------------------------
     if "\u2014" in raw:

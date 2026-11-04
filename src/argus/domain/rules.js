@@ -118,6 +118,38 @@ const VIOLATIONS = Object.freeze({
   r20: { 'status.force_success': 'true' },
 });
 
+const REPAIR_FACTS = Object.freeze({
+  r01: [{ field: 'test.masked_exit', value: 'false' }],
+  r02: [{ field: 'test.allow_failure', value: 'false' }],
+  r03: [{ field: 'test.skipped', value: 'false' }],
+  r04: [{ field: 'test.present', value: 'true' }],
+  r05: [{ field: 'test.pass_with_no_tests', value: 'false' }],
+  r06: [
+    { field: 'coverage.enforced', value: 'true' },
+    { field: 'coverage.threshold', value: String(MIN_COVERAGE_THRESHOLD) },
+  ],
+  r07: [{ field: 'lint.present', value: 'true' }],
+  r08: [{ field: 'lint.allow_failure', value: 'false' }],
+  r09: [{ field: 'scan.present', value: 'true' }],
+  r10: [{ field: 'scan.fail_on', value: 'high' }],
+  r11: [{ field: 'deploy.requires_tests', value: 'true' }],
+  r12: [{ field: 'deploy.manual_approval', value: 'true' }],
+  r13: [{ field: 'merge.required_checks_enforced', value: 'true' }],
+  r14: [{ field: 'secrets.detected_count', value: '0' }],
+  r15: [{ field: 'deps.lockfile_present', value: 'true' }],
+  r16: [{ field: 'deps.install_frozen', value: 'true' }],
+  r17: [{ field: 'cache.key_includes_lockfile', value: 'true' }],
+  r18: [{ field: 'image.pinned', value: 'true' }],
+  r19: [{ field: 'job.timeout_set', value: 'true' }],
+  r20: [{ field: 'status.force_success', value: 'false' }],
+});
+
+function repairFactsForRule(ruleId) {
+  const facts = REPAIR_FACTS[ruleId];
+  if (!facts) throw new ValidationError(`unknown Elenchos rule ${ruleId}`);
+  return facts;
+}
+
 function ruleById(ruleId) {
   const rule = RULES.find((r) => r.id === ruleId);
   if (!rule) throw new ValidationError(`unknown Elenchos rule ${ruleId}`);
@@ -169,6 +201,8 @@ module.exports = {
   MIN_COVERAGE_THRESHOLD,
   RULES,
   CLEAN_STATE,
+  REPAIR_FACTS,
+  repairFactsForRule,
   ruleById,
   violatingStateFor,
   evaluateRules,

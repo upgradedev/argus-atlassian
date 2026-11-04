@@ -54,6 +54,13 @@ function makeForgeClient(loader = defaultLoader) {
       return unwrapJson(response, `get issue ${issueKey}`);
     },
 
+    async getIssueRemoteLinks(issueKey) {
+      const response = await api.asApp().requestJira(
+        route`/rest/api/3/issue/${issueKey}/remotelink`,
+      );
+      return unwrapJson(response, `get remote links for ${issueKey}`);
+    },
+
     async assignIssue(issueKey, accountId) {
       const response = await api.asApp().requestJira(
         route`/rest/api/3/issue/${issueKey}/assignee`,
@@ -67,6 +74,13 @@ function makeForgeClient(loader = defaultLoader) {
         throw new AdapterHttpError(response.status, `assign ${issueKey} failed`);
       }
       return { status: response.status };
+    },
+
+    async getRepository(workspaceId, repoId) {
+      const response = await api.asApp().requestBitbucket(
+        route`/2.0/repositories/${workspaceId}/${repoId}`,
+      );
+      return unwrapJson(response, `get repository ${workspaceId}/${repoId}`);
     },
 
     async getPullRequest(workspaceId, repoId, pullRequestId) {
@@ -83,11 +97,75 @@ function makeForgeClient(loader = defaultLoader) {
       return unwrapJson(response, 'get branch restrictions');
     },
 
+    async getBranch(workspaceId, repoId, branchName) {
+      const response = await api.asApp().requestBitbucket(
+        route`/2.0/repositories/${workspaceId}/${repoId}/refs/branches/${branchName}`,
+      );
+      return unwrapJson(response, `get branch ${branchName}`);
+    },
+
+    async commitTextFile({ workspaceId, repoId, branch, parent, path, content, message }) {
+      // Bitbucket documents application/x-www-form-urlencoded for text
+      // files and explicitly says multipart is not supported by Forge.
+      const body = new URLSearchParams({
+        message,
+        branch,
+        parents: parent,
+        [`/${String(path).replace(/^\//, '')}`]: content,
+      });
+      const response = await api.asApp().requestBitbucket(
+        route`/2.0/repositories/${workspaceId}/${repoId}/src`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: body.toString(),
+        },
+      );
+      if (response.status < 200 || response.status >= 300) {
+        throw new AdapterHttpError(response.status, `commit ${path} failed`);
+      }
+      return { status: response.status };
+    },
+
+    async createPullRequest({
+      workspaceId, repoId, title, sourceBranch, destinationBranch, description,
+    }) {
+      const response = await api.asApp().requestBitbucket(
+        route`/2.0/repositories/${workspaceId}/${repoId}/pullrequests`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title,
+            description,
+            close_source_branch: true,
+            source: { branch: { name: sourceBranch } },
+            destination: { branch: { name: destinationBranch } },
+          }),
+        },
+      );
+      return unwrapJson(response, `create pull request ${title}`);
+    },
+
     async getRepoFileText(workspaceId, repoId, commit, path) {
       const response = await api.asApp().requestBitbucket(
         route`/2.0/repositories/${workspaceId}/${repoId}/src/${commit}/${path}`,
       );
       return unwrapText(response, `get repo file ${path}`);
+    },
+
+    async createConfluencePage(spaceId, page) {
+      const response = await api.asApp().requestConfluence(route`/wiki/api/v2/pages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          spaceId: String(spaceId),
+          status: 'current',
+          title: page.title,
+          body: { representation: 'storage', value: page.bodyStorage },
+        }),
+      });
+      return unwrapJson(response, `create Confluence page ${page.title}`);
     },
   });
 }

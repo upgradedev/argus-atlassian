@@ -15,6 +15,8 @@
     "build-demo": "node scripts/build_demo.js"
   },
   "dependencies": {
-    "@forge/api": "^8.4.0"
+    "@forge/api": "^8.4.0",
+    "@forge/kvs": "^1.2.0",
+    "@forge/resolver": "^1.7.1"
   }
 }

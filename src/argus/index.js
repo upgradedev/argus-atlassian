@@ -65,10 +65,13 @@ module.exports = {
   CLEAN_STATE: domain.CLEAN_STATE,
   MIN_COVERAGE_THRESHOLD: domain.MIN_COVERAGE_THRESHOLD,
   ruleById: domain.ruleById,
+  REPAIR_FACTS: domain.REPAIR_FACTS,
+  repairFactsForRule: domain.repairFactsForRule,
   violatingStateFor: domain.violatingStateFor,
   evaluateRules: domain.evaluateRules,
   validateAllRules: domain.validateAllRules,
   extractPipelineFacts: domain.extractPipelineFacts,
+  repairPipelineYaml: domain.repairPipelineYaml,
   // standby
   Engineer: domain.Engineer,
   PageOutcome: domain.PageOutcome,

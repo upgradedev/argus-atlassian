@@ -77,6 +77,22 @@ function fakeClient(overrides = {}) {
       calls.push(['getBranchRestrictions', workspaceId, repoId]);
       return { values: [{ kind: 'require_passing_builds_to_merge' }] };
     },
+    async getRepository(workspaceId, repoId) {
+      calls.push(['getRepository', workspaceId, repoId]);
+      return { uuid: '{repo-uuid}', mainbranch: { name: 'main' } };
+    },
+    async getBranch(workspaceId, repoId, branch) {
+      calls.push(['getBranch', workspaceId, repoId, branch]);
+      return { target: { hash: branch === 'main' ? 'parent123' : 'repair456' } };
+    },
+    async commitTextFile(args) {
+      calls.push(['commitTextFile', args]);
+      return { status: 201 };
+    },
+    async createPullRequest(args) {
+      calls.push(['createPullRequest', args]);
+      return { id: 77, links: { html: { href: 'https://bitbucket.org/ws/repo/pull-requests/77' } } };
+    },
     ...overrides,
   };
 }
@@ -151,6 +167,51 @@ test('escalate: mismatch never touches the client, match assigns', async () => {
   assert.deepEqual(client.calls, [['assignIssue', 'OPS-1', 'acc-2']]);
 });
 
+test('writer opens a repair PR only after digest verification and a verified rewrite', async () => {
+  const fakeGreen = [
+    'image: node:latest',
+    'pipelines:',
+    '  default:',
+    '    - step:',
+    '        script:',
+    '          - npm test || true',
+  ].join('\n');
+  const client = fakeClient({
+    async getRepoFileText(...args) {
+      client.calls.push(['getRepoFileText', ...args]);
+      return fakeGreen;
+    },
+  });
+  const writer = new AtlassianWriter(client);
+  const change = new TypedChangeIR(
+    'proposal-OPS-1-r01-1',
+    'Repair proposal for r01: Test exit code masked (|| true)',
+    [new ChangeOp(OpKind.SET_CONFIG, 'bitbucket-pipelines.yml', 'test.masked_exit', 'false')],
+    { evidenceClaims: ['OPS-1:r01'], preventionRule: 'r01' },
+  );
+  await assert.rejects(
+    writer.openRepairPullRequest(change, '0'.repeat(64), {
+      workspace: 'ws', repository: 'repo', issueKey: 'OPS-1',
+    }),
+    DigestMismatchError,
+  );
+  assert.deepEqual(client.calls, []);
+
+  const out = await writer.openRepairPullRequest(change, change.digest(), {
+    workspace: 'ws', repository: 'repo', issueKey: 'OPS-1',
+  });
+  assert.equal(out.executed, true);
+  assert.equal(out.pullRequestId, 77);
+  assert.equal(out.commit, 'repair456');
+  assert.ok(out.applied.includes('r01'));
+  const names = client.calls.map((call) => call[0]);
+  assert.deepEqual(names, [
+    'getRepository', 'getBranch', 'getRepoFileText', 'commitTextFile', 'getBranch', 'createPullRequest',
+  ]);
+  const commit = client.calls.find(([name]) => name === 'commitTextFile')[1];
+  assert.doesNotMatch(commit.content, /\|\| true/);
+});
+
 test('post-incident page builder carries the numbers and the seal', () => {
   const evaluation = evaluateRules(violatingStateFor('r01'));
   const page = buildPostIncidentPage({
@@ -160,6 +221,52 @@ test('post-incident page builder carries the numbers and the seal', () => {
   assert.match(page.bodyStorage, /r01/);
   assert.match(page.bodyStorage, /commit-1/);
   assert.match(page.bodyStorage, /a{64}/);
+});
+
+test('reader exposes linked work without calling it a root cause', async () => {
+  const client = fakeClient({
+    async getIssue(issueKey) {
+      return {
+        key: issueKey,
+        fields: {
+          summary: 'Checkout down',
+          issuelinks: [
+            {
+              type: { name: 'causes', inward: 'is caused by', outward: 'causes' },
+              outwardIssue: { key: 'REL-9' },
+            },
+          ],
+        },
+      };
+    },
+    async getIssueRemoteLinks() {
+      return [{
+        relationship: 'mentioned in',
+        object: {
+          url: 'https://bitbucket.org/acme/payments/pull-requests/42',
+          title: 'Payments PR 42',
+        },
+      }];
+    },
+  });
+  const links = await new AtlassianReader(client).fetchLinkedWork('OPS-1');
+  assert.deepEqual(links.map((l) => [l.kind, l.id]), [
+    ['jira-issue', 'REL-9'],
+    ['bitbucket', 'https://bitbucket.org/acme/payments/pull-requests/42'],
+  ]);
+  assert.equal(links[1].causal, false);
+});
+
+test('post-incident page builder escapes untrusted fields', () => {
+  const page = buildPostIncidentPage({
+    issueKey: '<script>alert(1)</script>',
+    evaluation: evaluateRules(violatingStateFor('r01')),
+    seal: '<b>bad</b>',
+    rootCause: '"quoted"',
+  });
+  assert.doesNotMatch(page.bodyStorage, /<script>alert/);
+  assert.match(page.bodyStorage, /&lt;script&gt;alert/);
+  assert.match(page.bodyStorage, /&quot;quoted&quot;/);
 });
 
 test('scorecard payload derives metrics from the evaluation, not adjectives', () => {
@@ -188,6 +295,55 @@ test('forge client factory: missing @forge/api yields null, fake api yields a cl
   const issue = await client.getIssue('OPS-9');
   assert.equal(issue.key, 'OPS-9');
   assert.deepEqual(seen, ['/rest/api/3/issue/OPS-9']);
+});
+
+test('forge client creates a Confluence page through the v2 route', async () => {
+  const seen = [];
+  const fakeApi = {
+    asApp: () => ({
+      requestConfluence: async (path, options) => {
+        seen.push([path, JSON.parse(options.body)]);
+        return { status: 200, json: async () => ({ id: '123', title: 'Report' }) };
+      },
+    }),
+    route: (strings, ...values) => strings.reduce((acc, s, i) => acc + s + (values[i] ?? ''), ''),
+  };
+  const client = makeForgeClient(() => fakeApi);
+  const page = await client.createConfluencePage('456', {
+    title: 'Report', bodyStorage: '<p>Body</p>',
+  });
+  assert.equal(page.id, '123');
+  assert.equal(seen[0][0], '/wiki/api/v2/pages');
+  assert.deepEqual(seen[0][1], {
+    spaceId: '456',
+    status: 'current',
+    title: 'Report',
+    body: { representation: 'storage', value: '<p>Body</p>' },
+  });
+});
+
+test('forge client commits text with URL-encoded Bitbucket src form', async () => {
+  const seen = [];
+  const fakeApi = {
+    asApp: () => ({
+      requestBitbucket: async (path, options) => {
+        seen.push([path, options]);
+        return { status: 201, text: async () => '' };
+      },
+    }),
+    route: (strings, ...values) => strings.reduce((acc, s, i) => acc + s + (values[i] ?? ''), ''),
+  };
+  const client = makeForgeClient(() => fakeApi);
+  const out = await client.commitTextFile({
+    workspaceId: 'ws', repoId: 'repo', branch: 'argus/repair', parent: 'abc123',
+    path: 'bitbucket-pipelines.yml', content: 'image: node:20\n', message: 'fix(ci): repair',
+  });
+  assert.equal(out.status, 201);
+  assert.equal(seen[0][0], '/2.0/repositories/ws/repo/src');
+  assert.equal(seen[0][1].method, 'POST');
+  assert.match(seen[0][1].body, /branch=argus%2Frepair/);
+  assert.match(seen[0][1].body, /parents=abc123/);
+  assert.match(seen[0][1].body, /bitbucket-pipelines\.yml=image%3A\+node%3A20%0A|bitbucket-pipelines\.yml=image%3Anode/);
 });
 
 test('forge client surfaces non-2xx as AdapterHttpError with the status', async () => {

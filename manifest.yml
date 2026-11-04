@@ -120,9 +120,11 @@ modules:
         Rules you never break:
         1. Never state a canary verdict you did not get from the
            run-canary-kill-test action in this conversation.
-        2. Never approve your own proposal. A write happens only through
+        2. Never approve your own proposal. First store a plan with
+           propose-typed-change. A write happens only through
            escalate-standby-responder, and only with a human supplied
-           SHA-256 approval digest of the exact plan.
+           SHA-256 approval digest matching that exact stored plan and a
+           named standby account.
         3. If an action reports not-implemented or an error, say so plainly
            and stop. Do not fill the gap with a plausible answer.
       conversationStarters:
@@ -134,6 +136,7 @@ modules:
         - trace-incident-provenance
         - propose-typed-change
         - escalate-standby-responder
+        - open-verified-repair-pr
       skills:
         - argus-socratic-canary-skill
 
@@ -148,6 +151,7 @@ modules:
         - trace-incident-provenance
         - propose-typed-change
         - escalate-standby-responder
+        - open-verified-repair-pr
 
   # Same skill directory serves external coding agents (Agent Skills open
   # spec, TRAPS.md T2) and the Forge Rovo Agent above (skills property).
@@ -164,6 +168,7 @@ modules:
           - trace-incident-provenance
           - propose-typed-change
           - escalate-standby-responder
+          - open-verified-repair-pr
 
   action:
     - key: run-canary-kill-test
@@ -241,6 +246,71 @@ modules:
           description: >-
             Lowercase hex SHA-256 digest of the exact plan a human approved.
             A digest of anything else must be refused.
+        changeId:
+          title: Change Id
+          type: string
+          required: false
+          description: Stored proposal id. Omit it to use the latest proposal for this issue.
+        standbyAccountId:
+          title: Standby Account Id
+          type: string
+          required: false
+          description: Atlassian account id of the standby responder to assign.
+        elapsedSeconds:
+          title: Elapsed Seconds
+          type: integer
+          required: false
+          description: Seconds since the first page, used by the standby roster when one is supplied.
+
+    - key: open-verified-repair-pr
+      name: Open verified repair PR
+      function: openVerifiedRepairPr
+      actionVerb: CREATE
+      description: >-
+        Open a Bitbucket repair pull request from a stored Typed Change IR.
+        Runs only when approvalDigest matches that stored plan and the
+        deterministic rewrite re-verifies against the Elenchos rules.
+      inputs:
+        issueKey:
+          title: Issue Key
+          type: string
+          required: true
+          description: The JSM incident or Jira issue key, for example OPS-123
+        approvalDigest:
+          title: Approval Digest
+          type: string
+          required: true
+          description: Lowercase hex SHA-256 digest of the exact stored plan a human approved.
+        changeId:
+          title: Change Id
+          type: string
+          required: false
+          description: Stored proposal id. Omit it to use the latest proposal for this issue.
+        workspace:
+          title: Workspace
+          type: string
+          required: false
+          description: Shared Bitbucket workspace slug or UUID.
+        repository:
+          title: Repository
+          type: string
+          required: false
+          description: Bitbucket repository slug or UUID.
+        sourceBranch:
+          title: Source Branch
+          type: string
+          required: false
+          description: Destination branch to repair from. Defaults to the repository main branch.
+        pipelinePath:
+          title: Pipeline Path
+          type: string
+          required: false
+          description: Pipeline file path. Defaults to bitbucket-pipelines.yml.
+        pipelineYaml:
+          title: Pipeline YAML
+          type: string
+          required: false
+          description: Optional YAML used only for a verified dry-run repair preview.
 
   # Every handler below lives in src/index.js, the thin Forge adapter. The
   # adapters call the pure domain core in src/argus/, which imports no Forge,
@@ -264,6 +334,8 @@ modules:
       handler: index.proposeTypedChange
     - key: escalateStandbyResponder
       handler: index.escalateStandbyResponder
+    - key: openVerifiedRepairPr
+      handler: index.openVerifiedRepairPr
 
 resources:
   - key: argus-ui
@@ -289,6 +361,7 @@ permissions:
     - read:pullrequest:bitbucket
     - write:pullrequest:bitbucket
     - read:repository:bitbucket
+    - write:repository:bitbucket
     # Compass (component page plus scorecard events and metrics)
     - read:component:compass
     - write:component:compass

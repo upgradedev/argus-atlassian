@@ -14,24 +14,43 @@
 const {
   ArgusError,
   CanaryFixture,
-  ChangeOp,
-  OpKind,
-  TypedChangeIR,
   ProvenanceNode,
   ProvenanceThread,
-  Engineer,
-  StandbyRoster,
   evaluateRules,
   extractPipelineFacts,
+  repairPipelineYaml,
   ruleById,
   validateAllRules,
 } = require('./argus/index.js');
 const { InMemoryEvaluator } = require('./argus/adapters/in_memory.js');
-const { AtlassianReader, buildScorecardPayload } = require('./adapters/atlassian.js');
+const {
+  AtlassianReader,
+  AtlassianWriter,
+  buildScorecardPayload,
+} = require('./adapters/atlassian.js');
 const { makeForgeClient } = require('./adapters/forge_client.js');
+const {
+  createCompassDataProvider,
+  compassDataProviderCallback,
+} = require('./adapters/compass.js');
+const { makeForgePlanStore, InMemoryPlanStore } = require('./adapters/plan_store.js');
+const { createGovernance } = require('./governance.js');
+const {
+  parseMergeCheckEvent,
+  parseIssueKey,
+  mergeCheckMessage,
+} = require('./forge_events.js');
+const { makeResolverHandler } = require('./resolver.js');
 
 const forgeClient = makeForgeClient();
 const reader = forgeClient ? new AtlassianReader(forgeClient) : null;
+const writer = forgeClient ? new AtlassianWriter(forgeClient) : null;
+const planStore = makeForgePlanStore() ?? new InMemoryPlanStore();
+const governance = createGovernance({
+  store: planStore,
+  writer,
+  storageMode: planStore.mode,
+});
 
 const NOT_CONNECTED = 'not-connected: @forge/api unavailable in this runtime';
 
@@ -43,6 +62,20 @@ function findField(value, field, depth = 0) {
     if (found) return found;
   }
   return '';
+}
+
+function findValue(value, field, depth = 0) {
+  if (depth > 3 || value === null || typeof value !== 'object') return undefined;
+  if (value[field] !== undefined) return value[field];
+  for (const child of Object.values(value)) {
+    const found = findValue(child, field, depth + 1);
+    if (found !== undefined) return found;
+  }
+  return undefined;
+}
+
+function issueKeyFrom(args) {
+  return findField(args, 'issueKey') || parseIssueKey(...args);
 }
 
 function seedCanary() {
@@ -83,9 +116,10 @@ async function liveEvaluation(args) {
   // Returns null when no live route exists, so callers can fall through to
   // evaluated-input, then seed, in that order. Never fabricates ids.
   if (!reader) return null;
-  const workspaceId = findField(args, 'workspaceId') || findField(args, 'uuid');
-  const repoId = findField(args, 'repoId') || findField(args, 'repositoryUuid');
-  const pullRequestId = findField(args, 'pullRequestId');
+  const event = parseMergeCheckEvent(...args);
+  const workspaceId = event?.workspaceId || findField(args, 'workspaceId');
+  const repoId = event?.repoId || findField(args, 'repoId') || findField(args, 'repositoryUuid');
+  const pullRequestId = event?.pullRequestId || findField(args, 'pullRequestId');
   if (!workspaceId || !repoId || !pullRequestId) return null;
   const pr = await forgeClient.getPullRequest(workspaceId, repoId, pullRequestId);
   const commit = pr?.source?.commit?.hash;
@@ -93,52 +127,91 @@ async function liveEvaluation(args) {
   return reader.fetchPipelineEvaluation(workspaceId, repoId, commit);
 }
 
-async function resolver() {
+async function getArgusStatus() {
   const validation = validateAllRules();
   return {
     status: reader ? 'live-ready' : 'seed-demo',
     liveEvidence: reader ? 'connected' : NOT_CONNECTED,
+    planStorage: planStore.mode,
     rulesAccepted: `${validation.accepted}/${validation.total}`,
     canary: seedCanary(),
   };
 }
 
+async function evaluatePipeline(req = {}) {
+  const payload = req.payload ?? req;
+  const yaml = typeof payload.pipelineYaml === 'string' ? payload.pipelineYaml : '';
+  const facts = extractPipelineFacts(yaml);
+  return {
+    status: yaml ? 'evaluated-input' : 'evaluated-empty-input',
+    facts,
+    evaluation: evaluationSummary(evaluateRules(facts)),
+    repair: yaml ? repairPipelineYaml(yaml) : null,
+  };
+}
+
+async function getProposalStatus(req = {}) {
+  const payload = req.payload ?? req;
+  const issueKey = payload.issueKey ?? req.context?.extension?.issue?.key ?? '';
+  const changeId = payload.changeId ?? '';
+  return governance.getProposal({ issueKey, changeId });
+}
+
 async function socraticCanaryMergeCheck(...args) {
+  // Bitbucket documents exactly { success, message } for this function.
+  // Returning our richer action shape here was a UAT finding. The rich
+  // evaluation stays available through the action and resolver paths.
   try {
     const live = await liveEvaluation(args);
     if (live) {
       return {
-        status: 'live',
-        // The documented merge check response payload shape is applied by
-        // the Forge runtime layer; this object is what our panel renders.
-        // It is labelled until exercised on the owner dev site.
-        responseContract: 'unverified-until-dev-site',
-        evaluation: evaluationSummary(live.evaluation),
+        success: live.evaluation.clean,
+        message: mergeCheckMessage(live.evaluation),
       };
     }
   } catch (err) {
-    return { status: 'seed-demo', liveEvidence: NOT_CONNECTED, liveError: err.message, canary: seedCanary() };
+    return {
+      success: false,
+      message: `Argus could not evaluate this pull request: ${err.message}`.slice(0, 240),
+    };
   }
-  return { status: 'seed-demo', liveEvidence: NOT_CONNECTED, canary: seedCanary() };
-}
-
-async function compassDataProvider(...args) {
-  const yaml = findField(args, 'pipelineYaml');
-  const evaluation = yaml ? evaluateRules(extractPipelineFacts(yaml)) : evaluateRules({});
   return {
-    status: yaml ? 'evaluated-input' : 'seed-demo',
-    liveEvidence: reader ? 'connected' : NOT_CONNECTED,
-    scorecard: buildScorecardPayload(evaluation),
-    metricsEmitted: 0, // becomes real when the Compass adapter send lands
+    success: false,
+    message: 'Argus could not evaluate this pull request in this runtime.',
   };
 }
 
-async function compassDataProviderCallback() {
-  return { status: 'seed-demo', liveEvidence: NOT_CONNECTED, metricsEmitted: 0 };
+const compassDataProvider = createCompassDataProvider({
+  client: forgeClient,
+  reader,
+});
+
+async function compassDataProviderHandler(...args) {
+  const request = args.find(
+    (a) => a && typeof a === 'object' && typeof a.url === 'string',
+  ) ?? {};
+  if (!request.url) {
+    // The panel/resolver path has no component link yet. Answer with an
+    // internal scorecard preview, clearly not a Compass registration.
+    const yaml = findField(args, 'pipelineYaml');
+    const evaluation = yaml ? evaluateRules(extractPipelineFacts(yaml)) : evaluateRules({});
+    return {
+      status: yaml ? 'evaluated-input' : 'seed-demo',
+      liveEvidence: reader ? 'connected' : NOT_CONNECTED,
+      scorecard: buildScorecardPayload(evaluation),
+    };
+  }
+  return compassDataProvider(request);
+}
+
+async function compassCallback(...args) {
+  const input = args.find((a) => a && typeof a === 'object') ?? {};
+  await compassDataProviderCallback(input);
+  return undefined;
 }
 
 async function onIssueEvent(...args) {
-  const issueKey = findField(args, 'issueKey');
+  const issueKey = issueKeyFrom(args);
   if (reader && issueKey) {
     const evidence = await reader.fetchEvidence(issueKey);
     return { status: 'live', issueKey, evidence, links: [] };
@@ -147,7 +220,7 @@ async function onIssueEvent(...args) {
 }
 
 async function runCanaryKillTest(...args) {
-  const issueKey = findField(args, 'issueKey');
+  const issueKey = issueKeyFrom(args);
   const yaml = findField(args, 'pipelineYaml');
   try {
     const live = await liveEvaluation(args);
@@ -171,6 +244,7 @@ async function runCanaryKillTest(...args) {
       issueKey,
       facts,
       evaluation: evaluationSummary(evaluateRules(facts)),
+      repair: repairPipelineYaml(yaml),
       canary: seedCanary(),
     };
   }
@@ -183,10 +257,11 @@ async function runCanaryKillTest(...args) {
 }
 
 async function traceIncidentProvenance(...args) {
-  const issueKey = findField(args, 'issueKey');
+  const issueKey = issueKeyFrom(args);
   if (reader && issueKey) {
     try {
       const evidence = await reader.fetchEvidence(issueKey);
+      const linkedWork = await reader.fetchLinkedWork(issueKey);
       const thread = new ProvenanceThread();
       thread.add(new ProvenanceNode(
         issueKey, 'incident',
@@ -198,10 +273,11 @@ async function traceIncidentProvenance(...args) {
         status: 'partial-live',
         issueKey,
         evidence,
+        linkedWork,
         walkBack: thread.walkBack(issueKey).map((n) => n.nodeId),
         rootCause: '',
         seal: thread.seal(issueKey),
-        note: 'only the incident node is live; commit and pipeline links need the Bitbucket link walk',
+        note: 'incident and linked work are live; links are association, not causality',
       };
     } catch (err) {
       return {
@@ -218,7 +294,7 @@ async function traceIncidentProvenance(...args) {
   return {
     status: 'seed-demo',
     syntheticSeed: true,
-    issueKey: findField(args, 'issueKey'),
+    issueKey,
     liveEvidence: NOT_CONNECTED,
     walkBack: thread.walkBack('seed-incident').map((n) => n.nodeId),
     rootCause: thread.rootCause('seed-incident').nodeId,
@@ -228,25 +304,31 @@ async function traceIncidentProvenance(...args) {
 
 async function proposeTypedChange(...args) {
   try {
+    const issueKey = issueKeyFrom(args);
     const ruleId = findField(args, 'ruleId');
+    if (!issueKey) {
+      return { status: 'refused', reason: 'issueKey input is required', executed: false };
+    }
     if (!ruleId) {
       return { status: 'refused', reason: 'ruleId input is required', executed: false };
     }
     const rule = ruleById(ruleId); // unknown rule ids refuse here
-    const change = new TypedChangeIR(
-      `proposal-${ruleId}`,
-      `Repair proposal for ${rule.id}: ${rule.title}`,
-      [new ChangeOp(OpKind.NOTIFY, `argus/rule/${ruleId}`)],
-      { preventionRule: ruleId },
-    );
+    const proposal = await governance.propose({
+      issueKey,
+      ruleId,
+      proposedBy: findField(args, 'proposedBy') || findField(args, 'accountId'),
+    });
     return {
-      status: 'proposal-only',
+      status: planStore.mode === 'forge-kvs' ? 'proposal-stored' : 'proposal-only',
+      stored: true,
+      storage: planStore.mode,
       rule: { id: rule.id, title: rule.title },
       executed: false,
-      changeId: change.changeId,
-      digest: change.digest(),
-      director: change.renderForRole('director'),
-      standby: change.renderForRole('standby'),
+      changeId: proposal.changeId,
+      digest: proposal.digest,
+      director: proposal.director,
+      secops: proposal.secops,
+      standby: proposal.standby,
     };
   } catch (err) {
     if (err instanceof ArgusError) return refused(err);
@@ -255,48 +337,45 @@ async function proposeTypedChange(...args) {
 }
 
 async function escalateStandbyResponder(...args) {
-  // Governed write. Approved plans are not persisted yet (Forge storage
-  // wiring lands with the dev site), so no digest can be verified against a
-  // stored plan and this never executes. With no roster it refuses; with a
-  // roster it answers who would be paged, dry-run only. The executing path
-  // exists and is tested in adapters/atlassian.js (escalateWithApproval).
-  try {
-    const payload = args.find((a) => a && typeof a === 'object') ?? {};
-    const approvalDigest = findField(args, 'approvalDigest');
-    if (!/^[0-9a-f]{64}$/.test(approvalDigest)) {
-      return {
-        status: 'refused', verified: false, executed: false,
-        reason: 'approvalDigest must be a lowercase hex SHA-256 digest',
-      };
-    }
-    const rosterInput = payload.roster ?? payload.engineers;
-    if (!Array.isArray(rosterInput) || rosterInput.length === 0) {
-      return {
-        status: 'refused', verified: false, executed: false,
-        reason: 'no standby roster is configured and no approved plan is stored',
-      };
-    }
-    const roster = new StandbyRoster(
-      rosterInput.map((e) => new Engineer(e.id, e.name, e.reachable !== false)),
-    );
-    const outcome = roster.whoToPage(Number(payload.elapsedSeconds ?? 0));
-    return {
-      status: 'dry-run', verified: false, executed: false,
-      wouldPage: outcome.paged.engineerId, escalated: outcome.escalated,
-      reason: `${outcome.reason}; no write executed (adapter not wired)`,
-    };
-  } catch (err) {
-    if (err instanceof ArgusError) return refused(err);
-    throw err;
-  }
+  // Governed write. Governance verifies the human digest against the
+  // stored Typed Change IR before the writer can run. In Forge the store
+  // is KVS; in local tests it is an ephemeral Map and results name that.
+  return governance.approveAndEscalate({
+    issueKey: issueKeyFrom(args),
+    changeId: findField(args, 'changeId'),
+    approvalDigest: findField(args, 'approvalDigest'),
+    standbyAccountId: findField(args, 'standbyAccountId'),
+    roster: findValue(args, 'roster') ?? findValue(args, 'engineers') ?? null,
+    elapsedSeconds: Number(findValue(args, 'elapsedSeconds') ?? 0),
+    approvedBy: findField(args, 'approvedBy') || findField(args, 'accountId'),
+  });
 }
 
-exports.resolver = resolver;
+async function openVerifiedRepairPr(...args) {
+  return governance.approveAndOpenRepairPr({
+    issueKey: issueKeyFrom(args),
+    changeId: findField(args, 'changeId'),
+    approvalDigest: findField(args, 'approvalDigest'),
+    approvedBy: findField(args, 'approvedBy') || findField(args, 'accountId'),
+    workspace: findField(args, 'workspace'),
+    repository: findField(args, 'repository'),
+    sourceBranch: findField(args, 'sourceBranch'),
+    pipelinePath: findField(args, 'pipelinePath') || 'bitbucket-pipelines.yml',
+    pipelineYaml: findField(args, 'pipelineYaml'),
+  });
+}
+
+exports.resolver = makeResolverHandler({
+  getArgusStatus,
+  evaluatePipeline,
+  getProposalStatus,
+});
 exports.socraticCanaryMergeCheck = socraticCanaryMergeCheck;
-exports.compassDataProvider = compassDataProvider;
-exports.compassDataProviderCallback = compassDataProviderCallback;
+exports.compassDataProvider = compassDataProviderHandler;
+exports.compassDataProviderCallback = compassCallback;
 exports.onIssueEvent = onIssueEvent;
 exports.runCanaryKillTest = runCanaryKillTest;
 exports.traceIncidentProvenance = traceIncidentProvenance;
 exports.proposeTypedChange = proposeTypedChange;
 exports.escalateStandbyResponder = escalateStandbyResponder;
+exports.openVerifiedRepairPr = openVerifiedRepairPr;

@@ -1,0 +1,81 @@
+name: Forge register (manual, one-time)
+
+# Registers this app with Atlassian, writes the assigned app.id back to
+# a review branch, and adds the npm lockfile the deploy workflow needs.
+# It refuses to run when app.id already exists, because running Forge
+# register twice would create a second orphan app.
+
+on:
+  workflow_dispatch:
+    inputs:
+      appName:
+        description: Forge app name (letters, numbers, spaces, hyphens)
+        required: true
+        default: Argus for Jira JSM and Bitbucket
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: forge-register
+  cancel-in-progress: false
+
+jobs:
+  register:
+    runs-on: ubuntu-latest
+    env:
+      FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
+      FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
+      APP_NAME: ${{ inputs.appName }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Refuse a second registration
+        run: |
+          if grep -Eq '^[[:space:]]*id:[[:space:]]*ari:cloud:ecosystem::app/' manifest.yml; then
+            echo 'manifest.yml already has an app.id. Refusing to create an orphan app.'
+            exit 1
+          fi
+
+      - name: Install Forge CLI
+        run: npm install --global @forge/cli@latest
+
+      - name: Authenticate without printing account details
+        run: |
+          forge settings set usage-analytics false
+          forge whoami >/dev/null
+
+      - name: Resolve the dependency lockfile
+        run: npm install --package-lock-only --ignore-scripts
+
+      - name: Register the app
+        run: forge register "$APP_NAME" --non-interactive
+
+      - name: Prove app.id was written and lint now passes schema
+        run: |
+          grep -E '^[[:space:]]*id:[[:space:]]*ari:cloud:ecosystem::app/' manifest.yml
+          forge lint
+
+      - name: Open registration pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git switch -C chore/forge-registration
+          git add manifest.yml package-lock.json
+          git diff --cached --quiet && { echo 'No registration changes to commit.'; exit 1; }
+          git commit -m 'chore(forge): register Argus app and add dependency lockfile'
+          git push --force-with-lease origin chore/forge-registration
+          gh pr create \
+            --title 'chore(forge): register Argus app and add dependency lockfile' \
+            --body 'Created by the manual Forge register workflow after successful authentication and forge lint. The app id is an Atlassian resource identifier, not a credential. Review the manifest and lockfile diff, then merge before dispatching Forge deploy.' \
+            || gh pr view chore/forge-registration --json url --jq .url

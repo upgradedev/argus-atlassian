@@ -15,6 +15,7 @@ const {
   violatingStateFor,
   evaluateRules,
   validateAllRules,
+  repairFactsForRule,
   ruleById,
 } = require('../src/argus/domain/rules.js');
 const { extractPipelineFacts } = require('../src/argus/domain/pipeline_facts.js');
@@ -73,6 +74,14 @@ test('validateAllRules reports 20 of 20 accepted', () => {
   assert.equal(out.accepted, 20);
   assert.equal(out.total, 20);
   assert.deepEqual(out.rejected, []);
+});
+
+test('applying every repair fact makes its violating fixture pass that rule', () => {
+  for (const rule of RULES) {
+    const repaired = { ...violatingStateFor(rule.id) };
+    for (const fact of repairFactsForRule(rule.id)) repaired[fact.field] = fact.value;
+    assert.equal(rule.check(repaired), true, `${rule.id} repair does not satisfy the rule`);
+  }
 });
 
 test('naive badge check is thrown out, which is the fake-green point', () => {
