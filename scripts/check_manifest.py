@@ -19,9 +19,9 @@ Checks:
   3. Wiring resolves: every action -> function, every function handler ->
      an export in src/<file>.js, every UI resource -> resources + disk path,
      every module key unique.
-  4. Surfaces exist: site app has JSM/Jira panels, Compass component
-     page + data provider (as an array), Confluence space page (with a
-     route), and trigger; the Bitbucket merge check + PR panel live in
+  4. Surfaces exist: site app has JSM/Jira panels, Confluence space
+     page (with a route), and trigger, and declares no Compass module
+     (Atlassian end-of-life rejection); the Bitbucket merge check + PR panel live in
      the companion apps/bitbucket/ app root because Forge rejects mixing
      Bitbucket workspace scopes with Jira site scopes.
   5. Write gate: escalate-standby-responder requires approvalDigest
@@ -54,8 +54,6 @@ EXPECTED_SKILL_KEY = "argus-socratic-canary-skill"
 EXPECTED_SURFACES = {
     "jira:issuePanel",
     "jiraServiceManagement:queuePage",
-    "compass:componentPage",
-    "compass:dataProvider",
     "confluence:spacePage",
     "trigger",
     "rovo:agent",
@@ -72,8 +70,6 @@ COMPANION_SURFACES = {
 REQUIRED_SCOPES = {
     "storage:app",
     "read:servicedesk-request",
-    "write:event:compass",
-    "write:metric:compass",
     "write:page:confluence",
 }
 COMPANION_REQUIRED_SCOPES = {
@@ -285,14 +281,16 @@ def main():
         fail(f"missing module surfaces: {sorted(missing)}")
     else:
         ok(f"surfaces: all {len(EXPECTED_SURFACES)} site module types present "
-           f"(JSM, Jira, Compass, Confluence, trigger, Rovo)")
+           f"(JSM, Jira, Confluence, trigger, Rovo)")
     for panel in entries(modules, "jira:issuePanel"):
         if not panel.get("icon"):
             fail(f"jira:issuePanel {panel.get('key')} is missing the required icon")
         elif str(panel["icon"]).startswith(("http://", "https://")):
             fail(f"jira:issuePanel {panel.get('key')} icon is an external URL")
-    if not isinstance(modules.get("compass:dataProvider"), list):
-        fail("compass:dataProvider must be an array of definitions")
+    compass_modules = sorted(k for k in modules if k.startswith("compass:"))
+    if compass_modules:
+        fail(f"Compass modules {compass_modules} cannot deploy in a new "
+             f"Forge app (Compass end-of-life, CHANGE-3132)")
     for page in entries(modules, "confluence:spacePage"):
         if not page.get("route"):
             fail(f"confluence:spacePage {page.get('key')} is missing the required route")
@@ -304,6 +302,10 @@ def main():
     if bitbucket_scopes:
         fail(f"site manifest declares Bitbucket workspace scopes "
              f"{bitbucket_scopes}: Forge rejects mixing them with site scopes")
+    compass_scopes = sorted(s for s in scopes if s.endswith(":compass"))
+    if compass_scopes:
+        fail(f"site manifest declares Compass scopes {compass_scopes} "
+             f"with no deployable Compass module")
     missing_scopes = REQUIRED_SCOPES - set(scopes)
     if missing_scopes:
         fail(f"missing required scopes: {sorted(missing_scopes)}")

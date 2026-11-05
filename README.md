@@ -31,7 +31,8 @@ judge it in your browser. Nothing leaves the page.
 |---|---|
 | Domain core (canary, change IR, evidence, provenance, receipts, standby, shield, rules r01-r20) | Implemented and tested. `node --test` gives 101 pass, 0 fail |
 | Kill-test benchmark | Implemented. `node scripts/run_killtest_benchmark.js` gives rules accepted 20/20 on Argus synthetic fixtures. It is a fixture separation result, not a field measurement |
-| Forge apps | Two installables over one core: the registered site app (`manifest.yml`) owns JSM, Jira, Compass, Confluence, and Rovo; the Bitbucket companion app root (`apps/bitbucket/`) owns the merge check. Forge rejects mixing Bitbucket workspace scopes with site scopes |
+| Forge apps | Two installables over one core: the registered site app (`manifest.yml`) owns JSM, Jira, Confluence, and Rovo; the Bitbucket companion app root (`apps/bitbucket/`) owns the merge check. Forge rejects mixing Bitbucket workspace scopes with site scopes |
+| Compass surface | Not deployable for a new app. Atlassian's Compass end-of-life plan rejects new Compass modules at deploy time (CHANGE-3132; production deploy run 41958497031). The scorecard payload builder stays as tested library code, with no deployed Compass module or scope |
 | Live Atlassian reads | Reader adapter implemented behind an injected client, including issue links and remote links labelled association rather than causality. Live exercise is part of the deployment UAT below |
 | Governed writes | Typed Change IR proposals persist in Forge KVS. Standby assignment executes only when the human digest matches the stored plan, seals a receipt, and refuses replay |
 | Verified repair | Argus rewrites supplied pipeline YAML and re-evaluates all rules before returning it as a patch. The Bitbucket companion merge check blocks a fake-green PR; automated repair-PR creation is adapter-tested but not yet exposed as a companion function |
@@ -95,12 +96,10 @@ flowchart LR
   Jira[Jira Release issue] --> Panel
   BB[Bitbucket PR] --> Merge[bitbucket:mergeCheck]
   BB --> PRPanel[PR overview panel]
-  Compass[Compass component] --> CPage[Scorecard evidence page]
   Conf[Confluence space] --> PIR[Post-incident page]
   Panel --> Adapter[src/index.js site adapter]
   Merge --> BBAdapter[apps/bitbucket companion adapter]
   PRPanel --> BBAdapter
-  CPage --> Adapter
   PIR --> Adapter
   Agent[rovo:agent Argus Incident Governor] --> Actions[action modules]
   MCP[rovo:mcp Argus Evidence MCP] --> Actions
@@ -182,9 +181,9 @@ so pretending otherwise would not deploy.
 2. Install the Forge CLI and log in: `npm install -g @forge/cli`,
    then `forge login`.
 3. Site app: `manifest.yml` already carries the registered Argus site
-   app id. Run `forge deploy`, then `forge install` into Jira/JSM,
-   Compass, and Confluence as each product is available. Consent shows
-   13 scopes and zero external domains.
+   app id. Run `forge deploy`, then `forge install` into Jira/JSM
+   and Confluence as each product is available. Consent shows
+   9 scopes and zero external domains.
 4. Bitbucket companion: from `apps/bitbucket/`, run `forge register`
    once, then deploy and install it into the Bitbucket workspace. Its
    consent shows six scopes, including repository admin because
@@ -257,7 +256,7 @@ src/governance.js       stored plans, digest verification, receipts, replay guar
 src/resolver.js         @forge/resolver construction with a test fallback
 src/forge_events.js     documented Forge event parsers and merge-check replies
 src/argus/              pure domain core, zero vendor SDK imports
-src/adapters/           Atlassian, Compass, Forge client, KVS plan store
+src/adapters/           Atlassian, parked Compass payload, Forge client, KVS store
 skills/argus-canary/    Agent Skills SKILL.md, also the rovo:skill source
 tests/                  node:test suites for core, rules, handlers, adapters
 scripts/                kill-test benchmark, manifest gate, demo builder

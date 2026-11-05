@@ -27,21 +27,7 @@ on:
         required: true
         default: false
         type: boolean
-      installCompass:
-        description: Install into Compass on the configured site
-        required: true
-        default: false
-        type: boolean
-      installBitbucket:
-        description: Install into a shared Bitbucket workspace
-        required: true
-        default: false
-        type: boolean
-      bitbucketWorkspace:
-        description: Shared Bitbucket workspace slug or URL (required only for Bitbucket)
-        required: false
-        default: ''
-        type: string
+
 
 permissions:
   contents: read
@@ -118,26 +104,8 @@ jobs:
           --product Confluence --environment "$FORGE_ENVIRONMENT"
           --confirm-scopes --non-interactive --verbose
 
-      - name: Install into Compass
-        if: inputs.installCompass
-        run: >-
-          forge install --site "${{ steps.site.outputs.host }}"
-          --product Compass --environment "$FORGE_ENVIRONMENT"
-          --confirm-scopes --non-interactive --verbose
-
-      - name: Install into Bitbucket
-        if: inputs.installBitbucket
-        run: |
-          test -n "${{ inputs.bitbucketWorkspace }}"
-          workspace="${{ inputs.bitbucketWorkspace }}"
-          case "$workspace" in
-            http://*|https://*) site="$workspace" ;;
-            bitbucket.org/*) site="$workspace" ;;
-            *) site="bitbucket.org/$workspace" ;;
-          esac
-          forge install --site "$site" --product Bitbucket \
-            --environment "$FORGE_ENVIRONMENT" \
-            --confirm-scopes --non-interactive --verbose
-
+      # No Compass step: new Compass modules are rejected by Atlassian's
+      # Compass end-of-life plan. No Bitbucket step: Bitbucket is the
+      # separate companion app under apps/bitbucket/.
       - name: List installations
         run: forge install list --json > installations.json && cat installations.json

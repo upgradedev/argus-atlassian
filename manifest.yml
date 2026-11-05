@@ -50,26 +50,10 @@ modules:
   # Bitbucket workspace scopes in this site app, so the companion app is
   # a separate installable over the same src/argus/ domain core.
 
-  # --- Compass scorecards ----------------------------------------------------
-  compass:componentPage:
-    - key: argus-compass-scorecard-page
-      title: Argus Scorecard Evidence
-      resource: argus-ui
-      resolver:
-        function: resolver
-
-  # Sends canary events and metrics that feed Compass scorecards when a
-  # Bitbucket repository link is added to a component. `domains` here is link
-  # matching for the provider, not a fetch egress permission.
-  compass:dataProvider:
-    - key: argus-compass-data-provider
-      function: compassDataProvider
-      callback:
-        function: compassCallback
-      linkTypes:
-        - repository
-      domains:
-        - bitbucket.org
+  # No Compass modules: Atlassian's Compass end-of-life plan rejects
+  # new Compass modules in Forge apps at deploy time (CHANGE-3132,
+  # production deploy run 41958497031). The scorecard payload builder
+  # remains tested library code, but it is not a deployed surface.
 
   # --- Confluence post-incident pages ---------------------------------------
   confluence:spacePage:
@@ -180,9 +164,9 @@ modules:
       function: traceIncidentProvenance
       actionVerb: GET
       description: >-
-        Walk the provenance thread for this issue and return the linked
-        Bitbucket commit and pipeline run, Compass component, and Confluence
-        policy pages, with the evidence for each link.
+        Walk the provenance thread for this issue and return linked work
+        and Confluence policy pages, with the evidence for each link and
+        links labelled as association rather than causality.
       inputs:
         issueKey:
           title: Issue Key
@@ -251,10 +235,6 @@ modules:
   function:
     - key: resolver
       handler: index.resolver
-    - key: compassDataProvider
-      handler: index.compassDataProvider
-    - key: compassCallback
-      handler: index.compassDataProviderCallback
     - key: onIssueEvent
       handler: index.onIssueEvent
     - key: runCanaryKillTest
@@ -272,7 +252,7 @@ resources:
 
 permissions:
   # Scope strings verified 2026-11-03 against the Forge scope references
-  # for Forge, Jira, JSM, Compass, and Confluence. Bitbucket workspace
+  # for Forge, Jira, JSM, and Confluence. Bitbucket workspace
   # scopes are declared only in apps/bitbucket/manifest.yml: Forge rejects
   # mixing them with these site scopes. The Reader / Evaluator / Writer
   # split (AGENTS.md A7) is enforced inside src/argus/.
@@ -287,11 +267,6 @@ permissions:
     - read:jira-user
     - read:servicedesk-request
     - write:servicedesk-request
-    # Compass (component page plus scorecard events and metrics)
-    - read:component:compass
-    - write:component:compass
-    - write:event:compass
-    - write:metric:compass
     # Confluence (post-incident pages)
     - read:page:confluence
     - write:page:confluence

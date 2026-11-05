@@ -26,13 +26,8 @@ const { InMemoryEvaluator } = require('./argus/adapters/in_memory.js');
 const {
   AtlassianReader,
   AtlassianWriter,
-  buildScorecardPayload,
 } = require('./adapters/atlassian.js');
 const { makeForgeClient } = require('./adapters/forge_client.js');
-const {
-  createCompassDataProvider,
-  compassDataProviderCallback,
-} = require('./adapters/compass.js');
 const { makeForgePlanStore, InMemoryPlanStore } = require('./adapters/plan_store.js');
 const { createGovernance } = require('./governance.js');
 const { parseIssueKey } = require('./forge_events.js');
@@ -136,35 +131,6 @@ async function getProposalStatus(req = {}) {
   const issueKey = payload.issueKey ?? req.context?.extension?.issue?.key ?? '';
   const changeId = payload.changeId ?? '';
   return governance.getProposal({ issueKey, changeId });
-}
-
-// A Compass site app cannot call Bitbucket APIs. The provider registers
-// the two Argus metric definitions for a repository link; live values
-// arrive from explicit Argus evaluations, never invented here.
-const compassDataProvider = createCompassDataProvider();
-
-async function compassDataProviderHandler(...args) {
-  const request = args.find(
-    (a) => a && typeof a === 'object' && typeof a.url === 'string',
-  ) ?? {};
-  if (!request.url) {
-    // The panel/resolver path has no component link yet. Answer with an
-    // internal scorecard preview, clearly not a Compass registration.
-    const yaml = findField(args, 'pipelineYaml');
-    const evaluation = yaml ? evaluateRules(extractPipelineFacts(yaml)) : evaluateRules({});
-    return {
-      status: yaml ? 'evaluated-input' : 'seed-demo',
-      liveEvidence: reader ? 'connected' : NOT_CONNECTED,
-      scorecard: buildScorecardPayload(evaluation),
-    };
-  }
-  return compassDataProvider(request);
-}
-
-async function compassCallback(...args) {
-  const input = args.find((a) => a && typeof a === 'object') ?? {};
-  await compassDataProviderCallback(input);
-  return undefined;
 }
 
 async function onIssueEvent(...args) {
@@ -298,8 +264,6 @@ exports.resolver = makeResolverHandler({
   evaluatePipeline,
   getProposalStatus,
 });
-exports.compassDataProvider = compassDataProviderHandler;
-exports.compassDataProviderCallback = compassCallback;
 exports.onIssueEvent = onIssueEvent;
 exports.runCanaryKillTest = runCanaryKillTest;
 exports.traceIncidentProvenance = traceIncidentProvenance;
