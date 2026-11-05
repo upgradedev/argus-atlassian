@@ -3,7 +3,9 @@
 // Bitbucket-only Forge client for the companion workspace app.
 // Forge cannot mix Bitbucket workspace scopes with Jira site scopes in
 // one installable app, so these route calls deliberately live outside
-// the site app's src/ tree, which Forge lint scans as a whole.
+// the site app's src/ tree, which Forge lint scans as a whole. Like
+// the site client, package presence without the Forge runtime global
+// is not a live client.
 
 const { AdapterHttpError } = require('../../../../src/adapters/atlassian.js');
 
@@ -26,7 +28,8 @@ async function unwrapText(response, what) {
   return response.text();
 }
 
-function makeBitbucketClient(loader = defaultLoader) {
+function makeBitbucketClient(loader = defaultLoader, runtimeGlobal = globalThis) {
+  if (typeof runtimeGlobal?.__forge_fetch__ !== 'function') return null;
   let apiModule;
   try {
     apiModule = loader();

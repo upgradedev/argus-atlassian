@@ -20,6 +20,7 @@ const {
 } = require('../src/adapters/atlassian.js');
 const { makeForgeClient } = require('../src/adapters/forge_client.js');
 const { makeBitbucketClient } = require('../apps/bitbucket/src/adapters/bitbucket_client.js');
+const FORGE_RUNTIME = { __forge_fetch__: async () => ({}) };
 const {
   ChangeOp,
   OpKind,
@@ -292,7 +293,7 @@ test('forge client factory: missing @forge/api yields null, fake api yields a cl
     },
     route: (strings, ...values) => strings.reduce((acc, s, i) => acc + s + (values[i] ?? ''), ''),
   };
-  const client = makeForgeClient(() => fakeApi);
+  const client = makeForgeClient(() => fakeApi, FORGE_RUNTIME);
   const issue = await client.getIssue('OPS-9');
   assert.equal(issue.key, 'OPS-9');
   assert.deepEqual(seen, ['/rest/api/3/issue/OPS-9']);
@@ -309,7 +310,7 @@ test('forge client creates a Confluence page through the v2 route', async () => 
     }),
     route: (strings, ...values) => strings.reduce((acc, s, i) => acc + s + (values[i] ?? ''), ''),
   };
-  const client = makeForgeClient(() => fakeApi);
+  const client = makeForgeClient(() => fakeApi, FORGE_RUNTIME);
   const page = await client.createConfluencePage('456', {
     title: 'Report', bodyStorage: '<p>Body</p>',
   });
@@ -334,7 +335,7 @@ test('bitbucket companion client commits text with URL-encoded src form', async 
     }),
     route: (strings, ...values) => strings.reduce((acc, s, i) => acc + s + (values[i] ?? ''), ''),
   };
-  const client = makeBitbucketClient(() => fakeApi);
+  const client = makeBitbucketClient(() => fakeApi, FORGE_RUNTIME);
   const out = await client.commitTextFile({
     workspaceId: 'ws', repoId: 'repo', branch: 'argus/repair', parent: 'abc123',
     path: 'bitbucket-pipelines.yml', content: 'image: node:20\n', message: 'fix(ci): repair',
@@ -347,6 +348,15 @@ test('bitbucket companion client commits text with URL-encoded src form', async 
   assert.match(seen[0][1].body, /bitbucket-pipelines\.yml=image%3A\+node%3A20%0A|bitbucket-pipelines\.yml=image%3Anode/);
 });
 
+test('installed Forge packages without a Forge runtime still yield no live client', () => {
+  const fakeApi = {
+    asApp: () => ({}),
+    route: (strings) => strings.join(''),
+  };
+  assert.equal(makeForgeClient(() => fakeApi, {}), null);
+  assert.equal(makeBitbucketClient(() => fakeApi, {}), null);
+});
+
 test('forge client surfaces non-2xx as AdapterHttpError with the status', async () => {
   const fakeApi = {
     asApp: () => ({
@@ -354,7 +364,7 @@ test('forge client surfaces non-2xx as AdapterHttpError with the status', async 
     }),
     route: (strings, ...values) => strings.reduce((acc, s, i) => acc + s + (values[i] ?? ''), ''),
   };
-  const client = makeForgeClient(() => fakeApi);
+  const client = makeForgeClient(() => fakeApi, FORGE_RUNTIME);
   await assert.rejects(client.getIssue('NOPE-1'), (err) => {
     assert.ok(err instanceof AdapterHttpError);
     assert.equal(err.status, 404);

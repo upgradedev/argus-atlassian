@@ -29,7 +29,7 @@ judge it in your browser. Nothing leaves the page.
 
 | Surface | State today |
 |---|---|
-| Domain core (canary, change IR, evidence, provenance, receipts, standby, shield, rules r01-r20) | Implemented and tested. `node --test` gives 99 pass, 0 fail |
+| Domain core (canary, change IR, evidence, provenance, receipts, standby, shield, rules r01-r20) | Implemented and tested. `node --test` gives 101 pass, 0 fail |
 | Kill-test benchmark | Implemented. `node scripts/run_killtest_benchmark.js` gives rules accepted 20/20 on Argus synthetic fixtures. It is a fixture separation result, not a field measurement |
 | Forge apps | Two installables over one core: the registered site app (`manifest.yml`) owns JSM, Jira, Compass, Confluence, and Rovo; the Bitbucket companion app root (`apps/bitbucket/`) owns the merge check. Forge rejects mixing Bitbucket workspace scopes with site scopes |
 | Live Atlassian reads | Reader adapter implemented behind an injected client, including issue links and remote links labelled association rather than causality. Live exercise is part of the deployment UAT below |
@@ -141,7 +141,7 @@ cd argus-atlassian
 node --test
 ```
 
-Expected: `# pass 99` and `# fail 0` (measured 2026-11-04). Under a minute.
+Expected: `# pass 101` and `# fail 0` (measured 2026-11-05). Under a minute.
 
 ```bash
 node scripts/run_killtest_benchmark.js
@@ -223,7 +223,7 @@ Every number below names its command. Re-run them; do not take our word.
 
 | Claim | Command | Result on 2026-11-03 |
 |---|---|---|
-| Core and adapter tests | `node --test` | 99 pass, 0 fail |
+| Core and adapter tests | `node --test` | 101 pass, 0 fail |
 | Rule separation | `node scripts/run_killtest_benchmark.js` | 20/20 accepted; badge-only check thrown out 20/20; scope is synthetic fixtures |
 | Manifest shape | `python scripts/check_manifest.py` | 0 FAIL, 1 USER-GATED (Bitbucket companion `app.id`) |
 | Python twin still green | `python -m unittest discover` in the sister core | 39 tests OK; shared digests pinned in this repo tests |

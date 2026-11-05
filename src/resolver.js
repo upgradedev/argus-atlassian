@@ -5,6 +5,8 @@
 // registered through define() and exposed with getDefinitions().
 // Outside Forge, the fallback implements the same call.functionKey
 // dispatch so unit tests exercise the protocol instead of a bare lambda.
+// An installed @forge/resolver package is not a Forge runtime: without
+// the runtime global, the fallback is the honest local behavior.
 
 function defaultLoader() {
   // eslint-disable-next-line global-require
@@ -20,12 +22,14 @@ function unwrapResolver(moduleValue) {
   return candidates.find((candidate) => typeof candidate === 'function') ?? null;
 }
 
-function makeResolverHandler(definitions, loader = defaultLoader) {
+function makeResolverHandler(definitions, loader = defaultLoader, runtimeGlobal = globalThis) {
   let ResolverClass = null;
-  try {
-    ResolverClass = unwrapResolver(loader());
-  } catch {
-    ResolverClass = null;
+  if (typeof runtimeGlobal?.__forge_fetch__ === 'function') {
+    try {
+      ResolverClass = unwrapResolver(loader());
+    } catch {
+      ResolverClass = null;
+    }
   }
 
   if (ResolverClass) {

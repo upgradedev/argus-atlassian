@@ -2,7 +2,9 @@
 
 // Plan persistence behind one tiny async key-value interface.
 // In the Forge runtime this is backed by @forge/kvs and the manifest
-// storage:app scope. In tests and outside Forge it is an in-memory Map.
+// storage:app scope. An installed @forge/kvs package outside that
+// runtime (CI after npm ci) is not storage: its calls need the Forge
+// runtime global. In tests and outside Forge it is an in-memory Map.
 // The distinction matters and callers report it: memory persistence only
 // lasts for this process and is never called durable.
 
@@ -25,7 +27,8 @@ function unwrapKvs(moduleValue) {
   )) ?? null;
 }
 
-function makeForgePlanStore(loader = defaultLoader) {
+function makeForgePlanStore(loader = defaultLoader, runtimeGlobal = globalThis) {
+  if (typeof runtimeGlobal?.__forge_fetch__ !== 'function') return null;
   let loaded;
   try {
     loaded = loader();
