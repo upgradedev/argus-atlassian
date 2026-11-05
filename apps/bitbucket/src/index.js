@@ -53,6 +53,12 @@ async function canaryMergeCheck(...args) {
   try {
     const live = await liveEvaluation(args);
     if (live) {
+      if (typeof globalThis.__forge_fetch__ === 'function') {
+        console.info(
+          `argus canaryMergeCheck clean=${live.evaluation.clean} `
+          + `violations=${live.evaluation.violations.length}`,
+        );
+      }
       return {
         success: live.evaluation.clean,
         message: mergeCheckMessage(live.evaluation),
