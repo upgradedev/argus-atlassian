@@ -30,6 +30,8 @@ test('provenance seed walk ends at the seed commit with a verifiable shape', asy
   assert.deepEqual(out.walkBack, ['seed-incident', 'seed-pipeline', 'seed-commit']);
   assert.equal(out.rootCause, 'seed-commit');
   assert.match(out.seal, /^[0-9a-f]{64}$/);
+  assert.equal(out.evidenceGraph.isComplete, true);
+  assert.equal(out.evidenceGraph.sourcesPresent.length, 7);
 });
 
 test('propose: shell syntax in ruleId is refused by the Typed Change IR', async () => {
@@ -46,6 +48,9 @@ test('propose: valid ruleId stores a proposal with digest and nothing executed',
   assert.equal(out.executed, false);
   assert.match(out.changeId, /^proposal-OPS-1-r01-\d+$/);
   assert.match(out.digest, /^[0-9a-f]{64}$/);
+  assert.equal(out.shield.ruleId, 'r01');
+  assert.equal(out.shield.mode, 'observe');
+  assert.equal(out.shield.triage, 'proceed');
 });
 
 test('propose: missing ruleId refuses', async () => {
@@ -152,4 +157,58 @@ test('merge check returns exactly the documented success and message fields', as
 test('issue trigger never claims live evidence without Forge', async () => {
   const out = await adapter.onIssueEvent({ issue: { key: 'CST-1' } });
   assert.match(out.liveEvidence, /not-connected/);
+});
+
+test('resolver dispatches openRepairPullRequest with digest guard and dry-run honesty', async () => {
+  const proposal = await adapter.proposeTypedChange({ issueKey: 'OPS-91', ruleId: 'r01' });
+  const bad = await adapter.resolver({
+    call: {
+      functionKey: 'openRepairPullRequest',
+      payload: {
+        issueKey: 'OPS-91',
+        changeId: proposal.changeId,
+        approvalDigest: 'b'.repeat(64),
+      },
+    },
+    context: {},
+  });
+  assert.equal(bad.status, 'refused');
+  assert.equal(bad.executed, false);
+
+  const ok = await adapter.resolver({
+    call: {
+      functionKey: 'openRepairPullRequest',
+      payload: {
+        issueKey: 'OPS-91',
+        changeId: proposal.changeId,
+        approvalDigest: proposal.digest,
+        pipelineYaml: 'image: node:latest\npipelines:\n  default:\n    - step:\n        script:\n          - npm test || true',
+      },
+    },
+    context: {},
+  });
+  assert.equal(ok.status, 'verified-dry-run');
+  assert.equal(ok.verified, true);
+  assert.equal(ok.executed, false);
+  assert.ok(ok.repair.applied.includes('r01'));
+});
+
+test('resolver dispatches publishPostIncidentReport with sealed provenance and rule summary', async () => {
+  const out = await adapter.resolver({
+    call: {
+      functionKey: 'publishPostIncidentReport',
+      payload: {
+        issueKey: 'DEMO-11',
+        spaceId: 'SPACE-1',
+        pipelineYaml: 'image: node:latest\npipelines:\n  default:\n    - step:\n        script:\n          - npm test || true',
+      },
+    },
+    context: {},
+  });
+  assert.equal(out.status, 'draft-only');
+  assert.equal(out.executed, false);
+  assert.equal(out.issueKey, 'DEMO-11');
+  assert.equal(out.page.title, '[Argus] Post-incident report DEMO-11');
+  assert.match(out.page.bodyStorage, /<strong>r01<\/strong>/);
+  assert.match(out.page.bodyStorage, /Provenance seal: [0-9a-f]{64}/);
 });

@@ -8,16 +8,21 @@ body { margin: 0; background: #ffffff; color: #172b4d;
 .skip:focus { left: 8px; top: 8px; }
 main { max-width: 920px; margin: 0 auto; padding: 24px 16px 48px; }
 h1 { font-size: 28px; line-height: 1.15; margin: 0 0 8px; letter-spacing: 0; }
+h2 { font-size: 20px; line-height: 1.25; margin: 28px 0 8px; }
 .lead { font-size: 16px; max-width: 62ch; margin: 0 0 6px; }
 .status { font-size: 13px; color: #42526e; margin: 0 0 20px; }
-label { font-weight: 600; display: block; margin: 18px 0 6px; }
-textarea { width: 100%; min-height: 240px; padding: 10px; border: 1px solid #7a869a;
+label { font-weight: 600; display: block; margin: 16px 0 6px; }
+textarea, input[type="text"], select { width: 100%; padding: 9px 10px; border: 1px solid #7a869a;
   border-radius: 4px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 13px; }
-button { margin-top: 10px; background: #0052cc; color: #fff; border: 0; border-radius: 4px;
+  font-size: 13px; background: #ffffff; color: #172b4d; }
+textarea { min-height: 220px; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+button { background: #0052cc; color: #fff; border: 0; border-radius: 4px;
   padding: 10px 16px; font-size: 15px; font-weight: 600; cursor: pointer; }
-button.secondary { background: #ffffff; color: #0052cc; border: 1px solid #0052cc; margin-left: 8px; }
-button:focus-visible, textarea:focus-visible { outline: 3px solid #4c9aff; outline-offset: 2px; }
+button.secondary { background: #ffffff; color: #0052cc; border: 1px solid #0052cc; }
+button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-visible {
+  outline: 3px solid #4c9aff; outline-offset: 2px;
+}
 .repair { font-size: 14px; margin: 8px 0 0; }
 .summary { margin: 22px 0 10px; font-size: 17px; font-weight: 700; }
 table { border-collapse: collapse; width: 100%; font-size: 14px; }
@@ -25,5 +30,12 @@ th, td { border: 1px solid #dfe1e6; padding: 7px 9px; text-align: left; vertical
 th { background: #f4f5f7; }
 .pass { color: #006644; font-weight: 700; }
 .fail { color: #bf2600; font-weight: 700; }
+.card { border: 1px solid #dfe1e6; border-radius: 4px; padding: 14px; margin: 14px 0; background: #fafbfc; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px; overflow-wrap: anywhere; word-break: break-word; }
+.braille { font-size: 18px; line-height: 1.5; overflow-wrap: anywhere; word-break: break-word; }
+dl { margin: 8px 0; }
+dt { font-weight: 700; margin-top: 8px; }
+dd { margin: 2px 0 0 0; overflow-wrap: anywhere; }
 .note { font-size: 13px; color: #42526e; max-width: 68ch; }
 @media (prefers-reduced-motion: reduce) { * { transition: none; animation: none; } }
