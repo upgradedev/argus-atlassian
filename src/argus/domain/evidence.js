@@ -1,10 +1,8 @@
 'use strict';
 
 // Seven-source Evidence Graph (SupportTrace).
-// Sources are generic kinds, not vendor products, so the same graph serves
-// an AWS account and an Atlassian site. Adapters map their platform onto
-// these seven kinds and keep the vendor name in platformLabel.
-// Port of argus-aws-msp src/argus/domain/evidence.py (2026-11-03).
+// Sources are generic kinds, not vendor products, so adapters map their
+// platform onto these seven kinds and keep the vendor name in platformLabel.
 
 const { ValidationError } = require('./errors.js');
 

@@ -1,7 +1,6 @@
 name: Refresh package lockfile (manual)
 
-# The maintainer machine does not run local installs. This workflow is
-# the one supported way to create or refresh package-lock.json: it opens
+# Manual workflow to create or refresh package-lock.json in CI and open
 # a review pull request instead of committing straight to main.
 
 on:

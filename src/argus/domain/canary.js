@@ -6,10 +6,9 @@
 // A candidate rule is accepted only when it separates the two fixtures.
 // A candidate that passes the violating fixture, or fails the clean one,
 // is thrown out before any human sees it.
-// Port of argus-aws-msp src/argus/domain/canary.py (2026-11-03).
 //
-// Note: rules r01-r20 do not exist yet in either repo. This is the generic
-// kill-test machine every future rule must pass through, not the rules.
+// Elenchos rules r01-r20 (domain/rules.js) are validated through this
+// kill-test machine.
 
 const { ValidationError } = require('./errors.js');
 

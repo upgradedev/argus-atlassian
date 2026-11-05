@@ -3,7 +3,6 @@
 // Standby On-Call Roster with deterministic auto-failover.
 // Time enters as a number of seconds from the caller's clock port. The
 // domain never reads a wall clock, so failover is fully testable.
-// Port of argus-aws-msp src/argus/domain/standby.py (2026-11-03).
 
 const { ValidationError } = require('./errors.js');
 

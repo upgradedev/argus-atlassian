@@ -5,7 +5,6 @@
 // Enforce. Promotion is deterministic. It needs enough observations and a
 // false-alarm rate at or below the pinned threshold. No model promotes a
 // rule, and no caller can skip the observe stage.
-// Port of argus-aws-msp src/argus/domain/policy_shield.py (2026-11-03).
 
 const { ValidationError } = require('./errors.js');
 

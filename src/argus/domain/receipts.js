@@ -5,7 +5,6 @@
 // the approver, the decision and the moment. It renders three ways from
 // the same root: plain text, a spoken sentence for screen readers and
 // voice, and a Braille-ready line (Grade 1 letter mapping).
-// Port of argus-aws-msp src/argus/domain/receipts.py (2026-11-03).
 
 const { ValidationError } = require('./errors.js');
 const { sha256Hex } = require('./digest.js');

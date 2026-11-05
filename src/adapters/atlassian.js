@@ -6,9 +6,9 @@
 // a fake client and no Forge installation (tests/adapters.test.js). The
 // real client comes from adapters/forge_client.js inside a Forge runtime.
 //
-// Roles (STANDARDS.md A7): AtlassianReader cannot write (its write method
+// Least-privilege roles: AtlassianReader cannot write (its write method
 // hits the shared guard). AtlassianWriter runs a write function only after
-// verifyBeforeWrite, the same one check the Python core pins.
+// verifyBeforeWrite.
 
 const {
   RefusedError,

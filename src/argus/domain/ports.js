@@ -1,11 +1,10 @@
 'use strict';
 
-// Hexagonal ports and the three least-privilege roles (A7).
+// Hexagonal ports and the three least-privilege roles.
 // Reader can only read. Evaluator can only run checks in a sandbox.
 // Writer executes a change only after its digest matches the approved
 // digest. Platform adapters implement these shapes; the domain holds
 // no credential and no SDK handle.
-// Port of argus-aws-msp src/argus/domain/ports.py (2026-11-03).
 //
 // Expected adapter shapes (duck-typed, since JS has no Protocol):
 //   Reader:    fetchEvidence(incidentId) -> object of string to string

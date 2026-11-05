@@ -12,9 +12,7 @@
 //
 // A rule earns its id only by separating fixtures through the Socratic
 // Canary machine (canary.js): violating -> exit 1, clean -> exit 0.
-// scripts/run_killtest_benchmark.mjs re-proves that on every run.
-// Authored 2026-11-03. These rules did not exist in either core before;
-// STATE.md J3 named them before they were written.
+// scripts/run_killtest_benchmark.js re-proves that on every run.
 
 const { ValidationError } = require('./errors.js');
 const { CanaryFixture, SocraticCanaryValidator } = require('./canary.js');

@@ -1,11 +1,11 @@
 'use strict';
 
-// STANDARDS.md A5 + STATE.md section 6 rule 1: the pure domain imports no
-// Forge, Atlassian, cloud, or LLM SDK. The one allowed platform import is
-// node:crypto (Node standard library). The detector is proven against
-// violating and clean samples inside this file, like the Python gate.
+// Hexagonal purity gate: the pure domain imports no Forge, Atlassian,
+// cloud, or LLM SDK. The one allowed platform import is node:crypto
+// (Node standard library). The detector is proven against violating
+// and clean samples inside this file.
 //
-// Run: node --test tests/
+// Run: node --test
 
 const test = require('node:test');
 const assert = require('node:assert/strict');

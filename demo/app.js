@@ -13,7 +13,6 @@ __register('errors.js', function (module, exports, require) {
 'use strict';
 
 // Domain errors. Callers catch these, never vendor SDK errors.
-// Port of argus-aws-msp src/argus/domain/errors.py (2026-11-03).
 
 class ArgusError extends Error {
   constructor(message) {
@@ -40,10 +39,9 @@ __register('canary.js', function (module, exports, require) {
 // A candidate rule is accepted only when it separates the two fixtures.
 // A candidate that passes the violating fixture, or fails the clean one,
 // is thrown out before any human sees it.
-// Port of argus-aws-msp src/argus/domain/canary.py (2026-11-03).
 //
-// Note: rules r01-r20 do not exist yet in either repo. This is the generic
-// kill-test machine every future rule must pass through, not the rules.
+// Elenchos rules r01-r20 (domain/rules.js) are validated through this
+// kill-test machine.
 
 const { ValidationError } = require('./errors.js');
 
@@ -246,9 +244,7 @@ __register('rules.js', function (module, exports, require) {
 //
 // A rule earns its id only by separating fixtures through the Socratic
 // Canary machine (canary.js): violating -> exit 1, clean -> exit 0.
-// scripts/run_killtest_benchmark.mjs re-proves that on every run.
-// Authored 2026-11-03. These rules did not exist in either core before;
-// STATE.md J3 named them before they were written.
+// scripts/run_killtest_benchmark.js re-proves that on every run.
 
 const { ValidationError } = require('./errors.js');
 const { CanaryFixture, SocraticCanaryValidator } = require('./canary.js');

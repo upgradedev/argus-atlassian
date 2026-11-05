@@ -156,9 +156,7 @@ pip install pyyaml
 python scripts/check_manifest.py
 ```
 
-Expected: nine `PASS` lines and one `USER-GATED` line for the Bitbucket
-companion `app.id`. Exit code 0. The gated line is a named manual step,
-never a pass.
+Expected: nine `PASS` lines and `RESULT: 0 FAIL, 0 USER-GATED`. Exit code 0.
 
 To rebuild the demo page after a domain change:
 
@@ -185,10 +183,11 @@ so pretending otherwise would not deploy.
    app id. Run `forge deploy`, then `forge install` into Jira/JSM
    and Confluence as each product is available. Consent shows
    9 scopes and zero external domains.
-4. Bitbucket companion: from `apps/bitbucket/`, run `forge register`
-   once, then deploy and install it into the Bitbucket workspace. Its
-   consent shows three read scopes, including repository admin because
-   Bitbucket requires it even to read branch restrictions.
+4. Bitbucket companion: `apps/bitbucket/manifest.yml` already carries the
+   registered companion app id. From `apps/bitbucket/`, run `forge deploy`
+   and `forge install` into the Bitbucket workspace. Its consent shows
+   three read scopes, including repository admin because Bitbucket
+   requires it even to read branch restrictions.
 5. In Bitbucket workspace settings, enable Custom merge checks and mark
    Argus Socratic Canary required where you want it to block merges.
 6. Open any JSM incident. The Argus panel runs the seed canary on an
@@ -227,7 +226,6 @@ Every number below names its command. Re-run them; do not take our word.
 | Rule separation | `node scripts/run_killtest_benchmark.js` | 20/20 accepted; badge-only check thrown out 20/20; scope is synthetic fixtures |
 | Manifest shape | `python scripts/check_manifest.py` | 0 FAIL, 0 USER-GATED; site 9 scopes, companion 3 read scopes |
 | Production trigger | Create/update a Jira issue, then run the read-only Forge status workflow | Forge logs: `argus onIssueEvent live DEMO-11`; Jira installation `Up-to-date` |
-| Python twin still green | `python -m unittest discover` in the sister core | 39 tests OK; shared digests pinned in this repo tests |
 
 ## Well-Architected and EU AI Act notes
 

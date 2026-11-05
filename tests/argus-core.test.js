@@ -1,14 +1,10 @@
 'use strict';
 
-// Maintained unit tests for the Argus pure core (JS port).
-// Mirror of argus-aws-msp tests/test_argus_core.py, minus the Python-only
-// gate-script tests. The pinned hex values below were produced by the
-// Python core, not by this port:
-//   python temp/reference_values.py   (2026-11-03, argus-aws-msp src)
-// If a pinned digest fails here, the port is wrong. Do not update the pin
-// from JS output.
+// Unit tests for the Argus pure hexagonal core.
+// Pinned SHA-256 reference digests ensure canonical serialization and
+// Merkle receipt computation never drift.
 //
-// Run: node --test tests/
+// Run: node --test
 
 const test = require('node:test');
 const assert = require('node:assert/strict');

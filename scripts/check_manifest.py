@@ -2,16 +2,16 @@
 """Fail-closed gate for the Argus Forge manifest.
 
 Proves the claims made in manifest.yml comments, because a comment is not a
-check (STANDARDS.md: every gate ships with a proof that it fails).
+check (every gate ships with a proof that it fails).
 
 Checks:
   1. Zero Egress (Runs on Atlassian): no permissions.external, no top-level
      remotes/providers/endpoint/connectModules, no webtrigger module, no
      http(s) URL outside comments, and data residency storage (storage:app).
-  2. Rovo pairing (TRAPS.md T2): rovo:agent key argus-incident-governor and
+  2. Rovo pairing: rovo:agent key argus-incident-governor and
      rovo:mcp key argus-evidence-mcp-server exist, names <= 30 chars, and the
      agent action list equals the MCP tool list.
-  2b. Rovo skill (TRAPS.md T2, second half): rovo:skill module points at a
+  2b. Rovo skill: rovo:skill module points at a
      real skills/<name>/SKILL.md whose frontmatter obeys the Agent Skills
      spec as published by Atlassian (name matches directory, description
      50..1024 chars, allowed-tools covers dependencies.tools, body <= 500
@@ -34,10 +34,10 @@ Checks:
 Exit 0 = no FAIL (USER-GATED lines may still be printed), 1 = FAIL,
 2 = PyYAML missing.
 
-Requires PyYAML. In CI, install it explicitly; never on the dev machine C:
-drive (local installs are banned on the maintainer machine).
+Requires PyYAML.
 """
 import argparse
+import hashlib
 import re
 import sys
 from pathlib import Path
@@ -78,11 +78,44 @@ COMPANION_REQUIRED_SCOPES = {
     "read:repository:bitbucket",
 }
 FUNCTION_KEY_LIMIT = 23  # real Forge lint limit, run 41786704510
-BANNED = [
-    "compliant", "conformity",  # STANDARDS.md B4
-    "hedno", "deddie", "reflective", "eurosos",  # employer/customer names never ship
-    "cockroach", "backblaze", "qwen", "nebius", "xprize", "kaggle",  # G4
-]
+# SHA-256 digests of banned clean-room tokens (stored hashed so no banned
+# vocabulary or internal workspace filename is shipped in plaintext).
+BANNED_TOKEN_SHA256 = {
+    "b67c263c0379939b5a3389c0624c2837d133007be5914b49aaa4afacb6f146b6",
+    "a78ef0a05a15ff15828d17cca6c6e985b64a5f8fd54cc905870bb4f767c6556c",
+    "55206b0fd456c2179beb58ff8c4e7b85de9abda70c4098759ae63664c8f97fa1",
+    "766a82aaaf484c93da6a8954357522e19a6e2be3c2264f00bbf456761840d461",
+    "9a0d9562322f17bf7ce5c9100db2f46a27b719fa016783de08262ae68af5c8e3",
+    "dce263216c6e5f6f9266a952b2d6ebf83bcfe4eb90b6857d46820fcc7c5f23e2",
+    "16fd3c9b3a28501f74ccd4742a24da9885a257f2d4fffc27bb07dc49c099ba43",
+    "7a03c4bbd666dfa8aa5b86a15333b50a0c8755e5e499e0e75532ee7277a29a60",
+    "67f2d22514622d1be30c14ee9f3cb104503a159a33a656ca91a1953aa9616429",
+    "59719e65a648bd4677d233821f3e56b1035cc74f11420a21820b4064c2b7ffd9",
+    "1fce355b00c34ccbfdfe9c93f8c601a4259256e690541f0ef3e315912d0ef79b",
+    "e839e162d8106fe35160d44676559cc5b7cd62284058792011d52976e8a2a0e1",
+    "b951327c37d8a1ed4d5ed18908681f6aca718ecdfe174aa39cf2237547f92fe7",
+    "3b1445640016e175ac4726662ebe4a8674f04966d3885c788cd459e7874deb26",
+    "e274b356a5c400b8b627696c57ce215277a9f7864b8ea762bfe4bb118fffe308",
+    "b4b88b130f00da91f244fc1fdeb08190ac16fe503e70cb3eab37d13a0dcfacbb",
+    "bccc86317c281a19e56f3f941077ea61b3fb37d5bd527c518b92b188c4461251",
+    "38f7cf0b4ff37a008fbb79d2f153f9b854944b52fa50c97c0d4b0edc47426bc3",
+    "bec1b4f06305c3593120938be464c010eeab0396d2479ee5b7aca27e0f4ca618",
+    "c637d92d2bb72ae06c9f2eaaad6e992484914d6f2acf7b902281a399c37e931c",
+}
+
+
+def find_banned_tokens(text):
+    lowered = text.lower()
+    candidates = set(re.findall(r"[a-z0-9]+", lowered)) | set(
+        re.findall(r"[a-z0-9]+(?:[-.][a-z0-9]+)+", lowered)
+    )
+    hits = []
+    for token in sorted(candidates):
+        digest = hashlib.sha256(token.encode("utf-8")).hexdigest()
+        if digest in BANNED_TOKEN_SHA256:
+            hits.append(token)
+    return hits
+
 
 fails = []
 gated = []
@@ -147,7 +180,7 @@ def main():
     if agent is None:
         fail(f"rovo:agent key {EXPECTED_AGENT_KEY} missing")
     if mcp is None:
-        fail(f"rovo:mcp key {EXPECTED_MCP_KEY} missing (TRAPS.md T2)")
+        fail(f"rovo:mcp key {EXPECTED_MCP_KEY} missing")
     if len(mcps) > 1:
         fail("more than one rovo:mcp module (platform allows at most one)")
     if agent and len(agent.get("name", "")) > 30:
@@ -171,7 +204,7 @@ def main():
     skills = entries(modules, "rovo:skill")
     skill = next((s for s in skills if s.get("key") == EXPECTED_SKILL_KEY), None)
     if skill is None:
-        fail(f"rovo:skill key {EXPECTED_SKILL_KEY} missing (TRAPS.md T2)")
+        fail(f"rovo:skill key {EXPECTED_SKILL_KEY} missing")
     if agent is not None and EXPECTED_SKILL_KEY not in (agent.get("skills") or []):
         fail("rovo:agent does not list the skill in its skills property")
     if skill is not None:
@@ -208,10 +241,9 @@ def main():
                 if body_lines > 500:
                     fail(f"SKILL.md body is {body_lines} lines, limit is 500")
             if "\u2014" in skill_raw:
-                fail("em dash found in SKILL.md (STANDARDS.md F5)")
-            for word in BANNED:
-                if word in skill_raw.lower():
-                    fail(f"banned string found in SKILL.md: {word}")
+                fail("em dash found in SKILL.md")
+            for word in find_banned_tokens(skill_raw):
+                fail(f"banned string found in SKILL.md: {word}")
     if skill is not None and len(fails) == skill_fails_before:
         ok(f"rovo skill: {EXPECTED_SKILL_KEY} -> {rel_dir}/SKILL.md, "
            f"{len(dep_tools)} tool dependencies, frontmatter valid")
@@ -328,13 +360,33 @@ def main():
 
     # 6. Clean room -------------------------------------------------------------
     if "\u2014" in raw:
-        fail("em dash found in manifest (STANDARDS.md F5)")
-    lowered = raw.lower()
-    banned_hits = [word for word in BANNED if word in lowered]
+        fail("em dash found in manifest")
+    banned_hits = find_banned_tokens(raw)
     for word in banned_hits:
         fail(f"banned string found in manifest: {word}")
-    if not banned_hits and "\u2014" not in raw:
-        ok("clean room: 0 em dashes, 0 banned strings")
+    repo_clean = True
+    if mpath.name == "manifest.yml":
+        for sub in ("src", "tests", "scripts", "skills", ".github", "apps"):
+            base = root / sub
+            if not base.exists():
+                continue
+            for fpath in sorted(base.rglob("*")):
+                if not fpath.is_file() or fpath.suffix in {".png", ".jpg", ".ico", ".woff2"}:
+                    continue
+                ftext = fpath.read_text(encoding="utf-8", errors="replace")
+                fhits = find_banned_tokens(ftext)
+                if fhits:
+                    repo_clean = False
+                    fail(f"banned string found in {fpath.relative_to(root)}: {fhits[0]}")
+        for top_file in (".gitignore", "README.md"):
+            tpath = root / top_file
+            if tpath.exists():
+                thits = find_banned_tokens(tpath.read_text(encoding="utf-8", errors="replace"))
+                if thits:
+                    repo_clean = False
+                    fail(f"banned string found in {top_file}: {thits[0]}")
+    if not banned_hits and "\u2014" not in raw and repo_clean:
+        ok("clean room: 0 em dashes, 0 banned strings across manifests and repo")
 
     # 7. app.id (user-gated, never a pass) --------------------------------------
     app_id = app.get("id")
@@ -407,7 +459,7 @@ def check_companion(root, companion_path):
     leaked = root / "src" / "adapters" / "bitbucket_client.js"
     if leaked.exists():
         fail("Bitbucket client is back under the site app src/ tree")
-    if "\u2014" in craw or any(word in craw.lower() for word in BANNED):
+    if "\u2014" in craw or find_banned_tokens(craw):
         fail("companion manifest breaks the clean-room rule")
     capp_id = (cdoc.get("app") or {}).get("id")
     if not capp_id:
