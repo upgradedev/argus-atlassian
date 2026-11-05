@@ -17,6 +17,7 @@
 app:
   runtime:
     name: nodejs24.x
+  id: ari:cloud:ecosystem::app/93761b7d-a9c2-4626-ba37-5df1f2040967
 
 modules:
   bitbucket:mergeCheck:
