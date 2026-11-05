@@ -12,7 +12,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const adapter = require('../src/index.js');
-const bitbucketAdapter = require('../src/index-bitbucket.js');
+const bitbucketAdapter = require('../apps/bitbucket/src/index.js');
 
 test('seed canary separates fake-green from clean and is labelled synthetic', async () => {
   const out = await adapter.runCanaryKillTest({ issueKey: 'OPS-1' });

@@ -3,9 +3,9 @@
 // Bitbucket-only Forge client for the companion workspace app.
 // Forge cannot mix Bitbucket workspace scopes with Jira site scopes in
 // one installable app, so these route calls deliberately live outside
-// the site app's handler graph.
+// the site app's src/ tree, which Forge lint scans as a whole.
 
-const { AdapterHttpError } = require('./atlassian.js');
+const { AdapterHttpError } = require('../../../../src/adapters/atlassian.js');
 
 function defaultLoader() {
   // eslint-disable-next-line global-require

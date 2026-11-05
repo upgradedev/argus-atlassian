@@ -7,8 +7,8 @@
 //
 // This client is deliberately Jira and Confluence only. Forge rejects
 // a manifest that mixes Bitbucket workspace scopes with Jira site
-// scopes, so Bitbucket routes live in adapters/bitbucket_client.js
-// for the companion workspace app. The route tagged template blocks
+// scopes, so Bitbucket routes live under apps/bitbucket/ for the
+// companion workspace app. The route tagged template blocks
 // path traversal in interpolated parameters.
 
 const { AdapterHttpError } = require('./atlassian.js');

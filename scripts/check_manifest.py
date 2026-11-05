@@ -22,7 +22,7 @@ Checks:
   4. Surfaces exist: site app has JSM/Jira panels, Compass component
      page + data provider (as an array), Confluence space page (with a
      route), and trigger; the Bitbucket merge check + PR panel live in
-     the companion manifest.bitbucket.yml because Forge rejects mixing
+     the companion apps/bitbucket/ app root because Forge rejects mixing
      Bitbucket workspace scopes with Jira site scopes.
   5. Write gate: escalate-standby-responder requires approvalDigest
      against a stored plan. Function keys stay within the Forge limit
@@ -349,7 +349,7 @@ def main():
         fail(f"app.runtime.name is {runtime!r}, expected nodejs24.x (verified 2026-11-03)")
 
     # 8. Bitbucket companion manifest -----------------------------------------
-    companion_path = root / "manifest.bitbucket.yml"
+    companion_path = root / "apps" / "bitbucket" / "manifest.yml"
     if mpath.name == "manifest.yml":
         check_companion(root, companion_path)
 
@@ -358,7 +358,7 @@ def main():
 
 def check_companion(root, companion_path):
     if not companion_path.exists():
-        fail("manifest.bitbucket.yml missing: Bitbucket surfaces have no home")
+        fail("apps/bitbucket/manifest.yml missing: Bitbucket surfaces have no home")
         return
     craw = companion_path.read_text(encoding="utf-8")
     cdoc = yaml.safe_load(craw) or {}
@@ -386,7 +386,7 @@ def check_companion(root, companion_path):
         if len(key) > FUNCTION_KEY_LIMIT:
             fail(f"companion function key {key} exceeds {FUNCTION_KEY_LIMIT} characters")
         file_part, _, export = (fn.get("handler") or "").partition(".")
-        src_file = root / "src" / f"{file_part}.js"
+        src_file = companion_path.parent / "src" / f"{file_part}.js"
         if not src_file.exists() or not re.search(
                 rf"exports\.{re.escape(export)}\b",
                 src_file.read_text(encoding="utf-8")):
@@ -394,11 +394,16 @@ def check_companion(root, companion_path):
     for entry in merge:
         if entry.get("function") not in cfunctions:
             fail("companion merge check references a missing function")
-    bb_client = root / "src" / "adapters" / "bitbucket_client.js"
-    if bb_client.exists():
+    bb_client = companion_path.parent / "src" / "adapters" / "bitbucket_client.js"
+    if not bb_client.exists():
+        fail("companion bitbucket_client.js missing")
+    else:
         bb_text = bb_client.read_text(encoding="utf-8")
         if "requestJira" in bb_text or "requestConfluence" in bb_text:
             fail("bitbucket_client.js calls a site product API")
+    leaked = root / "src" / "adapters" / "bitbucket_client.js"
+    if leaked.exists():
+        fail("Bitbucket client is back under the site app src/ tree")
     if "\u2014" in craw or any(word in craw.lower() for word in BANNED):
         fail("companion manifest breaks the clean-room rule")
     capp_id = (cdoc.get("app") or {}).get("id")

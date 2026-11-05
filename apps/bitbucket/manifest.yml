@@ -1,14 +1,17 @@
 # Argus Bitbucket companion app.
 #
 # Forge cannot combine Bitbucket workspace scopes with Jira site scopes
-# in one installable app. The site app in manifest.yml owns JSM, Jira,
-# Compass, Confluence, and Rovo. This companion owns only the Bitbucket
-# merge check and PR evidence panel. Both call the same deterministic
-# domain core in src/argus/.
+# in one installable app. The site app in the repository root
+# manifest.yml owns JSM, Jira, Compass, Confluence, and Rovo. This
+# companion owns only the Bitbucket merge check and PR evidence panel.
+# Both call the same deterministic domain core in src/argus/.
 #
-# This file has no app.id yet. Its companion registration workflow must
-# copy it to manifest.yml in the runner, register a second Forge app,
-# and return the assigned id here through a reviewed pull request.
+# This app root is apps/bitbucket/. Keeping Bitbucket route calls out
+# of the site app's src/ tree matters: Forge lint scans source files
+# under an app root, not only the referenced handler graph.
+#
+# This file has no app.id yet. Registering this second Forge app
+# returns the assigned id here through a reviewed pull request.
 # Zero Egress is declared by omission exactly as in the site manifest.
 
 app:
@@ -36,13 +39,13 @@ modules:
 
   function:
     - key: resolver
-      handler: index-bitbucket.resolver
+      handler: index.resolver
     - key: canaryMergeCheck
-      handler: index-bitbucket.canaryMergeCheck
+      handler: index.canaryMergeCheck
 
 resources:
   - key: argus-ui
-    path: static/argus-ui/build
+    path: ../../static/argus-ui/build
 
 permissions:
   scopes:

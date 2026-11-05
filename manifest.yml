@@ -46,7 +46,7 @@ modules:
       resolver:
         function: resolver
 
-  # Bitbucket merge checks live in manifest.bitbucket.yml. Forge rejects
+  # Bitbucket merge checks live in apps/bitbucket/. Forge rejects
   # Bitbucket workspace scopes in this site app, so the companion app is
   # a separate installable over the same src/argus/ domain core.
 
@@ -273,7 +273,7 @@ resources:
 permissions:
   # Scope strings verified 2026-11-03 against the Forge scope references
   # for Forge, Jira, JSM, Compass, and Confluence. Bitbucket workspace
-  # scopes are declared only in manifest.bitbucket.yml: Forge rejects
+  # scopes are declared only in apps/bitbucket/manifest.yml: Forge rejects
   # mixing them with these site scopes. The Reader / Evaluator / Writer
   # split (AGENTS.md A7) is enforced inside src/argus/.
   scopes:

@@ -3,22 +3,26 @@
 // Bitbucket companion Forge app entry point.
 // Atlassian does not allow Bitbucket workspace scopes and Jira site
 // scopes in the same Forge installable. This entry shares the same
-// deterministic Argus domain core as the site app, but it is deployed
-// from manifest.bitbucket.yml and installed on a Bitbucket workspace.
+// deterministic Argus domain core as the site app, but it has its own
+// app root under apps/bitbucket/ and installs on a Bitbucket workspace.
+// It deliberately lives outside the site app's src/ tree: Forge lint
+// scans every source file under an app root, not only referenced
+// handlers, so Bitbucket route calls there would demand workspace
+// scopes in the site manifest and fail the site lint.
 
 const {
   evaluateRules,
   extractPipelineFacts,
   repairPipelineYaml,
   validateAllRules,
-} = require('./argus/index.js');
-const { AtlassianReader } = require('./adapters/atlassian.js');
+} = require('../../../src/argus/index.js');
+const { AtlassianReader } = require('../../../src/adapters/atlassian.js');
 const { makeBitbucketClient } = require('./adapters/bitbucket_client.js');
 const {
   parseMergeCheckEvent,
   mergeCheckMessage,
-} = require('./forge_events.js');
-const { makeResolverHandler } = require('./resolver.js');
+} = require('../../../src/forge_events.js');
+const { makeResolverHandler } = require('../../../src/resolver.js');
 
 const bitbucketClient = makeBitbucketClient();
 const reader = bitbucketClient ? new AtlassianReader(bitbucketClient) : null;

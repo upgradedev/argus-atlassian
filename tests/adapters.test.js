@@ -19,7 +19,7 @@ const {
   AdapterHttpError,
 } = require('../src/adapters/atlassian.js');
 const { makeForgeClient } = require('../src/adapters/forge_client.js');
-const { makeBitbucketClient } = require('../src/adapters/bitbucket_client.js');
+const { makeBitbucketClient } = require('../apps/bitbucket/src/adapters/bitbucket_client.js');
 const {
   ChangeOp,
   OpKind,

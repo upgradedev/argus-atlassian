@@ -31,7 +31,7 @@ judge it in your browser. Nothing leaves the page.
 |---|---|
 | Domain core (canary, change IR, evidence, provenance, receipts, standby, shield, rules r01-r20) | Implemented and tested. `node --test` gives 99 pass, 0 fail |
 | Kill-test benchmark | Implemented. `node scripts/run_killtest_benchmark.js` gives rules accepted 20/20 on Argus synthetic fixtures. It is a fixture separation result, not a field measurement |
-| Forge apps | Two installables over one core: the registered site app (`manifest.yml`) owns JSM, Jira, Compass, Confluence, and Rovo; the Bitbucket companion (`manifest.bitbucket.yml`) owns the merge check. Forge rejects mixing Bitbucket workspace scopes with site scopes |
+| Forge apps | Two installables over one core: the registered site app (`manifest.yml`) owns JSM, Jira, Compass, Confluence, and Rovo; the Bitbucket companion app root (`apps/bitbucket/`) owns the merge check. Forge rejects mixing Bitbucket workspace scopes with site scopes |
 | Live Atlassian reads | Reader adapter implemented behind an injected client, including issue links and remote links labelled association rather than causality. Live exercise is part of the deployment UAT below |
 | Governed writes | Typed Change IR proposals persist in Forge KVS. Standby assignment executes only when the human digest matches the stored plan, seals a receipt, and refuses replay |
 | Verified repair | Argus rewrites supplied pipeline YAML and re-evaluates all rules before returning it as a patch. The Bitbucket companion merge check blocks a fake-green PR; automated repair-PR creation is adapter-tested but not yet exposed as a companion function |
@@ -98,7 +98,7 @@ flowchart LR
   Compass[Compass component] --> CPage[Scorecard evidence page]
   Conf[Confluence space] --> PIR[Post-incident page]
   Panel --> Adapter[src/index.js site adapter]
-  Merge --> BBAdapter[src/index-bitbucket.js companion adapter]
+  Merge --> BBAdapter[apps/bitbucket companion adapter]
   PRPanel --> BBAdapter
   CPage --> Adapter
   PIR --> Adapter
@@ -185,8 +185,7 @@ so pretending otherwise would not deploy.
    app id. Run `forge deploy`, then `forge install` into Jira/JSM,
    Compass, and Confluence as each product is available. Consent shows
    13 scopes and zero external domains.
-4. Bitbucket companion: use a separate checkout, copy
-   `manifest.bitbucket.yml` over `manifest.yml`, run `forge register`
+4. Bitbucket companion: from `apps/bitbucket/`, run `forge register`
    once, then deploy and install it into the Bitbucket workspace. Its
    consent shows six scopes, including repository admin because
    Bitbucket requires it even to read branch restrictions.
@@ -252,9 +251,8 @@ EU AI Act (Regulation EU 2024/1689), by article, with the gap kept in.
 
 ```text
 manifest.yml            site Forge app: zero egress, Rovo pair plus skill
-manifest.bitbucket.yml  Bitbucket companion: merge check and PR panel
+apps/bitbucket/         Bitbucket companion app: merge check and PR panel
 src/index.js            site Forge handlers, seed fallbacks, live routing
-src/index-bitbucket.js  companion merge-check and PR panel handlers
 src/governance.js       stored plans, digest verification, receipts, replay guard
 src/resolver.js         @forge/resolver construction with a test fallback
 src/forge_events.js     documented Forge event parsers and merge-check replies
