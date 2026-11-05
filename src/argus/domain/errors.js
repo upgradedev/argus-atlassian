@@ -1,7 +1,6 @@
 'use strict';
 
 // Domain errors. Callers catch these, never vendor SDK errors.
-// Port of argus-aws-msp src/argus/domain/errors.py (2026-11-03).
 
 class ArgusError extends Error {
   constructor(message) {

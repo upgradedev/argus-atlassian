@@ -13,9 +13,6 @@
 # Zero Egress is therefore declared by omission, which is the mechanism the
 # Forge platform enforces at install time. `scripts/check_manifest.py` fails
 # the build if any egress surface is added back.
-# Note: the JOIN instruction cited "Zero Egress (TRAPS.md T1)". In this repo
-# TRAPS.md T1 is the Forge installation link trap, not egress. The authority
-# used here is the Atlassian page above, plus TRAPS.md T2 for rovo pairing.
 #
 # app.id was assigned by Atlassian during the one-time Forge registration
 # workflow on 2026-11-04. It is a public app resource identifier, not a
@@ -76,7 +73,7 @@ modules:
       filter:
         ignoreSelf: true
 
-  # --- Rovo pair (TRAPS.md T2: declare both, or forfeit the MCP bonus) -------
+  # --- Rovo pair (agent and MCP declare the same action/tool set) -------------
   rovo:agent:
     - key: argus-incident-governor
       name: Argus Incident Governor
@@ -122,7 +119,7 @@ modules:
         - escalate-standby-responder
 
   # Same skill directory serves external coding agents (Agent Skills open
-  # spec, TRAPS.md T2) and the Forge Rovo Agent above (skills property).
+  # spec) and the Forge Rovo Agent above (skills property).
   # Directory and SKILL.md name are `argus-canary` because the spec requires
   # the frontmatter name to match the directory name; the module key keeps
   # the longer bonus category name.
@@ -231,7 +228,7 @@ modules:
 
   # Every handler below lives in src/index.js, the thin Forge adapter. The
   # adapters call the pure domain core in src/argus/, which imports no Forge,
-  # Atlassian, or LLM SDK (AGENTS.md, STANDARDS.md A5).
+  # Atlassian, or LLM SDK.
   function:
     - key: resolver
       handler: index.resolver
@@ -255,7 +252,7 @@ permissions:
   # for Forge, Jira, JSM, and Confluence. Bitbucket workspace
   # scopes are declared only in apps/bitbucket/manifest.yml: Forge rejects
   # mixing them with these site scopes. The Reader / Evaluator / Writer
-  # split (AGENTS.md A7) is enforced inside src/argus/.
+  # least-privilege split is enforced inside src/argus/.
   scopes:
     # Forge platform. storage:app is the data residency enabled storage the
     # Runs on Atlassian eligibility page requires.

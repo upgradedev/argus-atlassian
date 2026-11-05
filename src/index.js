@@ -3,7 +3,7 @@
 // Thin Forge adapter. This is the ONLY layer that imports Forge SDKs, and
 // it does so lazily through adapters/forge_client.js: where @forge/api is
 // not installed (this dev machine, unit tests) the client is null and the
-// handlers fall back to a clearly labelled synthetic seed (TRAPS.md T1).
+// handlers fall back to a clearly labelled synthetic seed.
 // Where the payload itself carries pipeline YAML, the real Elenchos rules
 // r01-r20 evaluate it directly. A response says which of the three it is:
 // live, evaluated-input, or seed-demo. Nothing blurs them.

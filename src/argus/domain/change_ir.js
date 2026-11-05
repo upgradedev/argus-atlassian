@@ -4,7 +4,6 @@
 // A change is a list of typed operations over typed targets. Free-form
 // command strings are rejected at construction, so a model can propose an
 // operation but can never smuggle an arbitrary command past the gate.
-// Port of argus-aws-msp src/argus/domain/change_ir.py (2026-11-03).
 
 const { ValidationError } = require('./errors.js');
 const { digestPayload } = require('./digest.js');

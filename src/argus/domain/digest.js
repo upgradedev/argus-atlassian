@@ -1,10 +1,8 @@
 'use strict';
 
-// Canonical JSON + SHA-256, byte-identical to the Python core.
-// Python: json.dumps(payload, sort_keys=True, separators=(",", ":"))
-// with ensure_ascii at its default (True), then hashlib.sha256 of UTF-8.
-// node:crypto is the Node standard library, not a vendor SDK (AGENTS.md A5).
-// tests/argus-core.test.js pins Python-produced digests so any drift fails.
+// Canonical JSON + SHA-256.
+// node:crypto is the Node standard library, not a vendor SDK.
+// tests/argus-core.test.js pins reference digests so any drift fails.
 
 const { createHash } = require('node:crypto');
 

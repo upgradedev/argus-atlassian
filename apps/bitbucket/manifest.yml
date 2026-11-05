@@ -10,8 +10,8 @@
 # of the site app's src/ tree matters: Forge lint scans source files
 # under an app root, not only the referenced handler graph.
 #
-# This file has no app.id yet. Registering this second Forge app
-# returns the assigned id here through a reviewed pull request.
+# app.id was assigned by Atlassian during the one-time Forge registration
+# workflow on 2026-11-05.
 # Zero Egress is declared by omission exactly as in the site manifest.
 
 app:

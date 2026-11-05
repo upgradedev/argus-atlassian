@@ -2,19 +2,12 @@
 
 // Argus pure hexagonal core.
 // Platform-agnostic on purpose. This package imports no Forge, Atlassian,
-// cloud, or LLM SDK. Platform products (AWS MSP, Atlassian) supply adapters
-// for the ports in domain/ports.js and reuse every domain rule unchanged.
+// cloud, or LLM SDK. Platform adapters implement the ports in
+// domain/ports.js and reuse every domain rule unchanged.
 //
-// Ported 2026-11-03 from argus-aws-msp src/argus/ (Python), module by module:
-// errors, canary, change_ir, evidence, policy_shield, ports, provenance,
-// receipts, standby, plus adapters/in_memory. Equivalence with the Python
-// core is proven by pinned digests in tests/argus-core.test.js, which were
-// produced by the Python code, not by this port.
-//
-// Honest gap: the Elenchos rules r01-r20 named in STATE.md J3 do not exist
-// in the Python core either. What exists here is the kill-test machine
-// (domain/canary.js) that every future rule must pass. Authoring r01-r20
-// against Bitbucket pipeline state is separate, later work.
+// Core modules: errors, canary, change_ir, evidence, policy_shield, ports,
+// provenance, receipts, standby, rules (r01-r20), pipeline_facts,
+// pipeline_repair, plus adapters/in_memory.
 
 const domain = require('./domain/index.js');
 

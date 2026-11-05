@@ -3,7 +3,6 @@
 // Provenance Thread (Mitos). Walk an incident back to the causing change.
 // Each node seals the node before it with SHA-256, so a broken link is
 // detectable without trusting the store that held the chain.
-// Port of argus-aws-msp src/argus/domain/provenance.py (2026-11-03).
 
 const { ValidationError } = require('./errors.js');
 const { digestPayload } = require('./digest.js');

@@ -34,7 +34,7 @@ jobs:
         # path and fails before running anything (first CI run, 2026-11-03).
         run: node --test
 
-      - name: Coverage gate, src only, lines at or above 85 (STANDARDS C1)
+      - name: Coverage gate, src only, lines at or above 85
         run: >-
           node --experimental-test-coverage
           --test-coverage-include='src/**/*.js'

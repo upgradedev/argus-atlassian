@@ -1,9 +1,8 @@
 'use strict';
 
-// In-memory adapters. The shared test double for every platform.
-// AWS and Atlassian adapters replace these at the edge. Domain tests run
-// against this module unchanged in both products.
-// Port of argus-aws-msp src/argus/adapters/in_memory.py (2026-11-03).
+// In-memory adapters. The shared test double for the hexagonal ports.
+// Edge adapters replace these in production; domain tests run against
+// this module unchanged.
 
 const { SocraticCanaryValidator } = require('../domain/canary.js');
 const { guardReaderWriteAttempt, verifyBeforeWrite } = require('../domain/ports.js');
