@@ -66,11 +66,13 @@ test('browser bundle executes end-to-end with byte-identical SHA-256 digests, st
   function makeEl(id = '') {
     const listeners = new Map();
     const children = [];
+    let htmlVal = '';
     return {
       id,
       value: '',
       textContent: '',
-      innerHTML: '',
+      get innerHTML() { return htmlVal; },
+      set innerHTML(v) { htmlVal = v; if (!v) children.length = 0; },
       className: '',
       children,
       append(...nodes) { children.push(...nodes); },
@@ -182,10 +184,23 @@ test('browser bundle executes end-to-end with byte-identical SHA-256 digests, st
   assert.match(elements.get('standby-verdict').textContent, /Eleni Papadopoulou/);
   assert.match(elements.get('standby-verdict').textContent, /Escalated: yes/);
 
-  // 5. Verify deterministic YAML repair and empty input guidance (Persona 06 K3)
+  // 5. Verify deterministic YAML repair, KPI scalars, stage breakdown, diff preview, and empty input guidance (Persona 06 K3)
   assert.equal(elements.get('passing').textContent, '7/20 rules passing');
+  assert.equal(elements.get('kpi-gate-rate').textContent, '35%');
+  assert.equal(elements.get('kpi-open-findings').textContent, '13 Failing');
+  assert.match(elements.get('yaml-diff-preview').textContent, /--- a\/bitbucket-pipelines\.yml/);
   elements.get('repair').dispatch('click');
   assert.equal(elements.get('passing').textContent, '12/20 rules passing');
+  assert.equal(elements.get('kpi-gate-rate').textContent, '60%');
+  assert.equal(elements.get('kpi-open-findings').textContent, '8 Failing');
+  elements.get('tamper-digest').dispatch('click');
+  assert.match(elements.get('govern-status').textContent, /Write blocked by digest guard/);
+  elements.get('sync-digest').dispatch('click');
+  assert.match(elements.get('govern-status').textContent, /Digest verified/);
+  elements.get('filter-fail').dispatch('click');
+  assert.equal(elements.get('rows').children.length, 8);
+  elements.get('filter-all').dispatch('click');
+  assert.equal(elements.get('rows').children.length, 20);
   elements.get('yaml').value = '   ';
   elements.get('repair').dispatch('click');
   assert.match(elements.get('repair-summary').textContent, /The pipeline editor is empty/);

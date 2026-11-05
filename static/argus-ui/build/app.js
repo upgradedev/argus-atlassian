@@ -1270,6 +1270,30 @@ const ArgusShield = __require('./policy_shield.js');
 const ArgusPorts = __require('./ports.js');
 (function () {
   const sampleYaml = "image: node:latest\npipelines:\n  default:\n    - step:\n        name: Ship it\n        script:\n          - npm install\n          - npm test -- --passWithNoTests || true\n          - echo green || exit 0\n    - step:\n        deployment: production\n        script:\n          - ./deploy-prod.sh";
+  const repairableSet = { r01: true, r05: true, r15: true, r16: true, r20: true };
+  const stageGroups = [
+    {
+      id: 'stage-supply',
+      name: 'Stage 1: Container & Runner Supply Chain',
+      rules: ['r01', 'r11', 'r14', 'r17', 'r20']
+    },
+    {
+      id: 'stage-integrity',
+      name: 'Stage 2: Test & Exit-Code Integrity',
+      rules: ['r02', 'r03', 'r06', 'r12', 'r15']
+    },
+    {
+      id: 'stage-secrets',
+      name: 'Stage 3: Secrets, OIDC & Clone Hygiene',
+      rules: ['r04', 'r08', 'r13', 'r18', 'r19']
+    },
+    {
+      id: 'stage-gates',
+      name: 'Stage 4: Release & Security Gates',
+      rules: ['r05', 'r07', 'r09', 'r10', 'r16']
+    }
+  ];
+
   const input = document.getElementById('yaml');
   const summary = document.getElementById('summary');
   const tbody = document.getElementById('rows');
@@ -1280,6 +1304,7 @@ const ArgusPorts = __require('./ports.js');
   const ruleSelect = document.getElementById('rule-select');
   const digestInput = document.getElementById('approval-digest');
   const syncDigestBtn = document.getElementById('sync-digest');
+  const tamperDigestBtn = document.getElementById('tamper-digest');
   const elapsedSelect = document.getElementById('elapsed-seconds');
   const governForm = document.getElementById('govern-form');
   const governStatus = document.getElementById('govern-status');
@@ -1290,7 +1315,11 @@ const ArgusPorts = __require('./ports.js');
   const runtimeStatus = document.getElementById('runtime-status');
   const evidenceSummary = document.getElementById('evidence-summary');
   const shieldSummary = document.getElementById('shield-summary');
+  const diffPreview = document.getElementById('yaml-diff-preview');
+  const themeToggle = document.getElementById('theme-toggle');
   const shield = new ArgusShield.PolicyShield();
+
+  let activeFilter = 'all';
 
   const thread = new ArgusProvenance.ProvenanceThread();
   thread.add(new ArgusProvenance.ProvenanceNode(
@@ -1378,6 +1407,8 @@ const ArgusPorts = __require('./ports.js');
   function executeGovernance() {
     if (!currentChange) buildProposal(ruleSelect.value || 'r01');
     const suppliedDigest = digestInput.value.trim();
+    const kpiSla = document.getElementById('kpi-sla-timer');
+    const kpiSlaSub = document.getElementById('kpi-sla-sub');
     try {
       ArgusPorts.verifyBeforeWrite(currentChange, suppliedDigest);
     } catch (err) {
@@ -1412,6 +1443,42 @@ const ArgusPorts = __require('./ports.js');
     receiptSpoken.textContent = receipt.spokenText();
     receiptBraille.textContent = receipt.brailleText();
     receiptPlain.textContent = receipt.plainText();
+    if (kpiSla) kpiSla.textContent = elapsed + 's / 900s';
+    if (kpiSlaSub) {
+      kpiSlaSub.textContent = pageOutcome.escalated
+        ? 'SLA breached -> Standby SRE paged'
+        : 'Within SLA -> Primary SRE active';
+    }
+  }
+
+  function renderDiff(currentYaml) {
+    if (!diffPreview) return;
+    if (!currentYaml.trim()) {
+      diffPreview.textContent = 'No YAML content to diff.';
+      return;
+    }
+    const repaired = ArgusRepair.repairPipelineYaml(currentYaml);
+    const origLines = currentYaml.split('\n');
+    const nextLines = repaired.yaml.split('\n');
+    const lines = [];
+    lines.push('--- a/bitbucket-pipelines.yml (current)');
+    lines.push('+++ b/bitbucket-pipelines.yml (deterministic repair preview)');
+    const maxLen = Math.max(origLines.length, nextLines.length);
+    let diffCount = 0;
+    for (let i = 0; i < maxLen; i += 1) {
+      const a = origLines[i];
+      const b = nextLines[i];
+      if (a === b) {
+        if (a !== undefined) lines.push('  ' + a);
+      } else {
+        if (a !== undefined) { lines.push('- ' + a); diffCount += 1; }
+        if (b !== undefined) { lines.push('+ ' + b); diffCount += 1; }
+      }
+    }
+    if (diffCount === 0) {
+      lines.push('# All deterministic YAML repairs (r01, r05, r15, r16, r20) are already applied.');
+    }
+    diffPreview.textContent = lines.join('\n');
   }
 
   function render() {
@@ -1422,22 +1489,69 @@ const ArgusPorts = __require('./ports.js');
     const facts = ArgusFacts.extractPipelineFacts(input.value);
     const out = ArgusRules.evaluateRules(facts);
     const passing = out.results.filter(function (r) { return r.clean; }).length;
+    const failing = out.results.length - passing;
+    const pct = Math.round((passing / out.results.length) * 100);
+
     summary.textContent = out.clean
       ? 'Verdict: exit 0. All 20 Elenchos rules pass on these facts.'
       : 'Verdict: exit 1. ' + out.violations.length + ' of 20 Elenchos rules fail: '
         + out.violations.join(', ') + '.';
+
+    const byId = {};
+    out.results.forEach(function (r) { byId[r.id] = r; });
+
     tbody.innerHTML = '';
     out.results.forEach(function (r) {
+      if (activeFilter === 'fail' && r.clean) return;
+      if (activeFilter === 'pass' && !r.clean) return;
+      if (activeFilter === 'repair' && !repairableSet[r.id]) return;
+
       const tr = document.createElement('tr');
-      const id = document.createElement('td'); id.textContent = r.id;
-      const title = document.createElement('td'); title.textContent = r.title;
+      const id = document.createElement('td');
+      id.textContent = r.id;
+      id.className = 'mono';
+      const title = document.createElement('td');
+      title.textContent = r.title + (repairableSet[r.id] ? ' [auto-repair]' : '');
       const state = document.createElement('td');
       state.textContent = r.clean ? 'PASS' : 'FAIL';
       state.className = r.clean ? 'pass' : 'fail';
       tr.append(id, title, state);
+      tr.addEventListener('click', function () {
+        ruleSelect.value = r.id;
+        buildProposal(r.id);
+        executeGovernance();
+      });
       tbody.appendChild(tr);
     });
+
     document.getElementById('passing').textContent = passing + '/20 rules passing';
+
+    const kpiRate = document.getElementById('kpi-gate-rate');
+    if (kpiRate) kpiRate.textContent = pct + '%';
+    const kpiGateBar = document.getElementById('kpi-gate-bar');
+    if (kpiGateBar) {
+      const snapPct = pct >= 100 ? 100 : pct >= 80 ? 80 : pct >= 60 ? 60 : pct >= 40 ? 40 : pct >= 35 ? 35 : pct >= 20 ? 20 : 0;
+      kpiGateBar.className = 'kpi-bar-fill ' + (pct >= 80 ? 'ok' : pct >= 50 ? 'warn' : 'crit') + ' w-' + snapPct;
+    }
+    const kpiOpen = document.getElementById('kpi-open-findings');
+    if (kpiOpen) kpiOpen.textContent = failing + ' Failing';
+    const navFailBadge = document.getElementById('nav-fail-badge');
+    if (navFailBadge) navFailBadge.textContent = failing + ' fail';
+
+    stageGroups.forEach(function (sg) {
+      const passCount = sg.rules.filter(function (rid) { return byId[rid] && byId[rid].clean; }).length;
+      const countEl = document.getElementById(sg.id + '-count');
+      if (countEl) {
+        countEl.textContent = passCount + '/' + sg.rules.length + ' passing';
+      }
+      const barEl = document.getElementById(sg.id + '-bar');
+      if (barEl) {
+        const stagePct = Math.round((passCount / sg.rules.length) * 100);
+        barEl.className = 'stage-fill-pass w-' + stagePct;
+      }
+    });
+
+    renderDiff(input.value);
   }
 
   form.addEventListener('submit', function (e) { e.preventDefault(); render(); });
@@ -1472,12 +1586,73 @@ const ArgusPorts = __require('./ports.js');
     if (currentChange) digestInput.value = currentChange.digest();
     executeGovernance();
   });
+  if (tamperDigestBtn) {
+    tamperDigestBtn.addEventListener('click', function () {
+      digestInput.value = '0000000000000000000000000000000000000000000000000000000000000000';
+      executeGovernance();
+    });
+  }
   elapsedSelect.addEventListener('change', executeGovernance);
   governForm.addEventListener('submit', function (e) {
     e.preventDefault();
     executeGovernance();
   });
   input.addEventListener('input', render);
+
+  [
+    ['filter-all', 'all'],
+    ['filter-fail', 'fail'],
+    ['filter-pass', 'pass'],
+    ['filter-repair', 'repair']
+  ].forEach(function (pair) {
+    const btn = document.getElementById(pair[0]);
+    if (btn) {
+      btn.addEventListener('click', function () {
+        activeFilter = pair[1];
+        ['filter-all', 'filter-fail', 'filter-pass', 'filter-repair'].forEach(function (id) {
+          const el = document.getElementById(id);
+          if (el) el.className = id === pair[0] ? 'filter-chip active' : 'filter-chip';
+        });
+        render();
+      });
+    }
+  });
+
+  const zones = ['zone-posture', 'zone-workbench', 'zone-provenance', 'zone-governance'];
+  [
+    ['nav-all', 'all'],
+    ['nav-posture', 'zone-posture'],
+    ['nav-workbench', 'zone-workbench'],
+    ['nav-provenance', 'zone-provenance'],
+    ['nav-governance', 'zone-governance']
+  ].forEach(function (pair) {
+    const btn = document.getElementById(pair[0]);
+    if (btn) {
+      btn.addEventListener('click', function () {
+        ['nav-all', 'nav-posture', 'nav-workbench', 'nav-provenance', 'nav-governance'].forEach(function (id) {
+          const el = document.getElementById(id);
+          if (el) el.className = id === pair[0] ? 'nav-btn active' : 'nav-btn';
+        });
+        zones.forEach(function (zid) {
+          const z = document.getElementById(zid);
+          if (z) {
+            z.className = (pair[1] === 'all' || pair[1] === zid) ? 'zone-section' : 'zone-section hidden';
+          }
+        });
+      });
+    }
+  });
+
+  if (themeToggle) {
+    themeToggle.addEventListener('click', function () {
+      if (typeof document.documentElement !== 'undefined' && document.documentElement.getAttribute) {
+        const cur = document.documentElement.getAttribute('data-theme') || 'dark';
+        const next = cur === 'dark' ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-theme', next);
+        themeToggle.textContent = next === 'dark' ? 'Switch to Light Theme' : 'Switch to Dark Theme';
+      }
+    });
+  }
 
   buildProposal('r01');
   executeGovernance();
