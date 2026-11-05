@@ -29,16 +29,16 @@ judge it in your browser. Nothing leaves the page.
 
 | Surface | State today |
 |---|---|
-| Domain core (canary, change IR, evidence, provenance, receipts, standby, shield, rules r01-r20) | Implemented and tested. `node --test` gives 101 pass, 0 fail |
+| Domain core (canary, change IR, evidence, provenance, receipts, standby, shield, rules r01-r20) | Implemented and tested. `node --test` gives 104 pass, 0 fail |
 | Kill-test benchmark | Implemented. `node scripts/run_killtest_benchmark.js` gives rules accepted 20/20 on Argus synthetic fixtures. It is a fixture separation result, not a field measurement |
 | Forge apps | Two installables over one core: the registered site app (`manifest.yml`) owns JSM, Jira, Confluence, and Rovo; the Bitbucket companion app root (`apps/bitbucket/`) owns the merge check. Forge rejects mixing Bitbucket workspace scopes with site scopes |
 | Compass surface | Not deployable for a new app. Atlassian's Compass end-of-life plan rejects new Compass modules at deploy time (CHANGE-3132; production deploy run 41958497031). The scorecard payload builder stays as tested library code, with no deployed Compass module or scope |
 | Production deployment | Deployed 2026-11-05. The site app is installed in Jira on the maintainer site and reported `Up-to-date` by `forge install list`; the Bitbucket companion is production-deployed with no workspace installation until a workspace is named. Confluence install was refused by Atlassian because Confluence is not activated on that site |
 | Live Atlassian reads | Exercised in production: Jira REST created and updated UAT issue `DEMO-11`, and Forge logs recorded `argus onIssueEvent live DEMO-11`. Issue and remote links stay labelled association rather than causality. Panel and Rovo browser paths still need a signed-in human pass |
-| Governed writes | Typed Change IR proposals persist in Forge KVS. Standby assignment executes only when the human digest matches the stored plan, seals a receipt, and refuses replay |
-| Verified repair | Argus rewrites supplied pipeline YAML and re-evaluates all rules before returning it as a patch. The Bitbucket companion merge check blocks a fake-green PR; automated repair-PR creation is adapter-tested but not yet exposed as a companion function |
+| Governed writes | Typed Change IR proposals persist in Forge KVS. Jira standby assignment executes when the human digest matches the stored plan, seals a receipt, and refuses replay |
+| Verified repair | Argus rewrites supplied pipeline YAML and re-evaluates all rules before returning it as a patch. The Bitbucket companion merge check blocks a fake-green PR; automated repair-PR creation is wired on the site resolver (`openRepairPullRequest`) and adapter-tested, while live Bitbucket PR writes remain gated on a companion write scope |
 | Teamwork Graph connector ingestion | Not implemented. The documented connector shape pairs with external fetch and an auth provider, which would break zero egress, so Argus walks issue and pull request links instead. Recorded as an open decision, not a quiet gap |
-| Anonymous demo | Live as a static page (link above). It evaluates YAML you paste. It never connects to your site |
+| Anonymous demo | Live as a static page (link above). It evaluates Bitbucket Pipelines YAML you paste, walks incident provenance, compiles Typed Change IR across three role lenses, simulates JSM standby failover, and seals Spoken and Grade-1 Braille Merkle receipts in your browser. It never connects to your site |
 
 ## How the verification works
 
@@ -48,13 +48,13 @@ The contract is an exit code, not an opinion.
    or updated. Nobody has to ask.
 2. The reader collects evidence and a provenance thread links incident to
    pipeline run to commit, sealed with SHA-256 so a broken link shows.
-3. The Elenchos rules evaluate pipeline facts. A candidate repair must
-   first pass the Socratic Kill-Test: a violating fixture exits 1, a clean
+3. The Elenchos rules evaluate Bitbucket Pipelines facts. A candidate repair must
+   pass the Socratic Kill-Test before it ships: a violating fixture exits 1, a clean
    fixture exits 0. A check that passes the violating fixture, or fails
    clean traffic, is thrown out before a human sees it.
 4. Repairs are proposed as Typed Change IR, never as raw shell. Shell
    syntax in any field is rejected at construction.
-5. The one write path runs only after a human approves the exact plan and
+5. The Jira and Bitbucket write path runs after a human approves the exact plan and
    its SHA-256 digest matches. The approval receipt is Merkle sealed and
    renders as plain text, a spoken sentence, and a Braille-ready line.
 6. If the primary responder misses the ack window, the standby roster
@@ -85,8 +85,8 @@ The contract is an exit code, not an opinion.
 | r19 | No job timeout set |
 | r20 | Success status forced, not from exit codes |
 
-Each rule earned its place by separating fixtures through the kill-test
-machine. The badge-only check a status page uses is thrown out on all
+Each rule earned its place by separating Bitbucket Pipelines fixtures through the kill-test
+machine. The badge-only check a status page uses in Bitbucket Pipelines and Jira Releases is thrown out on all
 twenty fixtures in the same benchmark. That gap is the product.
 
 ## Architecture
@@ -141,7 +141,7 @@ cd argus-atlassian
 node --test
 ```
 
-Expected: `# pass 101` and `# fail 0` (measured 2026-11-05). Under a minute.
+Expected: `# pass 104` and `# fail 0` (measured 2026-11-05). Under a minute.
 
 ```bash
 node scripts/run_killtest_benchmark.js
@@ -197,15 +197,15 @@ so pretending otherwise would not deploy.
 ## Zero egress and least privilege
 
 The manifest declares no external domains, no remotes, no providers, no
-Connect modules, and no web triggers. Storage is Forge hosted storage
-only. That is stricter than the Runs on Atlassian badge minimum, which
+Connect modules, and no web triggers. Storage stays inside Forge hosted storage (`storage:app`).
+That is stricter than the Runs on Atlassian badge minimum, which
 permits analytics egress. `scripts/check_manifest.py` fails the build if
 any egress surface returns. Run it against a manifest with a `remotes:`
 block added and watch it exit 1; a gate that cannot fail is decoration.
 
 Within each installable, Forge grants one union scope set, so the
 Reader, Evaluator, and Writer split is also enforced in code: the
-reader adapter throws on write attempts, and the writer runs only
+reader adapter throws on write attempts, and the Jira and Bitbucket writer runs
 after the approval digest check. Both behaviors have tests that fail
 if the guard is removed. Keeping Bitbucket scopes in a companion app
 means the JSM/Rovo app never receives repository admin rights.
@@ -222,8 +222,8 @@ Every number below names its command. Re-run them; do not take our word.
 
 | Claim | Command | Result on 2026-11-05 |
 |---|---|---|
-| Core and adapter tests | `node --test` | 101 pass, 0 fail |
-| Rule separation | `node scripts/run_killtest_benchmark.js` | 20/20 accepted; badge-only check thrown out 20/20; scope is synthetic fixtures |
+| Core and adapter tests | `node --test` | 104 pass, 0 fail |
+| Rule separation | `node scripts/run_killtest_benchmark.js` | 20/20 accepted; Bitbucket badge-only check thrown out 20/20; scope is synthetic fixtures |
 | Manifest shape | `python scripts/check_manifest.py` | 0 FAIL, 0 USER-GATED; site 9 scopes, companion 3 read scopes |
 | Production trigger | Create/update a Jira issue, then run the read-only Forge status workflow | Forge logs: `argus onIssueEvent live DEMO-11`; Jira installation `Up-to-date` |
 
@@ -243,7 +243,7 @@ EU AI Act (Regulation EU 2024/1689), by article, with the gap kept in.
 | 10 (data) | Inputs are pipeline and issue facts inside the tenancy; rules are deterministic, no training data | Heuristic facts extraction can misread unusual YAML and must stay labelled as extracted facts |
 | 13 (transparency) | Every verdict names the rules, the exit codes, and whether evidence was live, pasted, or seed | The Rovo agent wording is model generated around those facts and can still phrase them badly |
 | 14 (human oversight) | Write paths need a human supplied digest matching a stored plan; proposals never self-approve; executions refuse replay and seal receipts | The digest proves plan integrity, not by itself the legal identity of the approver |
-| 15 (accuracy) | Rules must separate fixtures in the kill-test before they exist for users; benchmark ships in repo | Fixture separation is not field accuracy; no customer pipeline corpus has been measured |
+| 15 (accuracy) | Rules must separate fixtures in the kill-test before an SRE or release lead sees them; benchmark ships in repo | Fixture separation is not field accuracy; no customer pipeline corpus has been measured |
 | 50 (disclosure) | Panels and demo state plainly when a result is seed or not connected | Marketplace listing copy still has to carry the same labels through review |
 
 ## Repository layout

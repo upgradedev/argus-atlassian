@@ -3,12 +3,70 @@
 const __modules = {}; const __cache = {};
 function __register(name, fn) { __modules[name] = fn; }
 function __require(name) {
-  const key = name.split("/").pop();
+  const key = name.replace(/^node:/, "").split("/").pop();
   if (__cache[key]) return __cache[key].exports;
   const module = { exports: {} }; __cache[key] = module;
   __modules[key](module, module.exports, __require);
   return module.exports;
 }
+__register('crypto', function (module, exports) {
+  function sha256Hex(text) {
+    const bytes = new TextEncoder().encode(String(text));
+    const K = [
+      0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
+      0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
+      0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
+      0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
+      0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,
+      0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
+      0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,
+      0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2
+    ];
+    let h0 = 0x6a09e667, h1 = 0xbb67ae85, h2 = 0x3c6ef372, h3 = 0xa54ff53a;
+    let h4 = 0x510e527f, h5 = 0x9b05688c, h6 = 0x1f83d9ab, h7 = 0x5be0cd19;
+    const bitLen = bytes.length * 8;
+    const padLen = (((bytes.length + 8) >> 6) + 1) << 6;
+    const buf = new Uint8Array(padLen);
+    buf.set(bytes);
+    buf[bytes.length] = 0x80;
+    const view = new DataView(buf.buffer);
+    view.setUint32(padLen - 8, Math.floor(bitLen / 0x100000000), false);
+    view.setUint32(padLen - 4, bitLen >>> 0, false);
+    const W = new Uint32Array(64);
+    const rotr = function (x, n) { return (x >>> n) | (x << (32 - n)); };
+    for (let off = 0; off < padLen; off += 64) {
+      for (let i = 0; i < 16; i += 1) W[i] = view.getUint32(off + i * 4, false);
+      for (let i = 16; i < 64; i += 1) {
+        const s0 = rotr(W[i - 15], 7) ^ rotr(W[i - 15], 18) ^ (W[i - 15] >>> 3);
+        const s1 = rotr(W[i - 2], 17) ^ rotr(W[i - 2], 19) ^ (W[i - 2] >>> 10);
+        W[i] = (W[i - 16] + s0 + W[i - 7] + s1) >>> 0;
+      }
+      let a = h0, b = h1, c = h2, d = h3, e = h4, f = h5, g = h6, h = h7;
+      for (let i = 0; i < 64; i += 1) {
+        const S1 = rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25);
+        const ch = (e & f) ^ (~e & g);
+        const t1 = (h + S1 + ch + K[i] + W[i]) >>> 0;
+        const S0 = rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22);
+        const maj = (a & b) ^ (a & c) ^ (b & c);
+        const t2 = (S0 + maj) >>> 0;
+        h = g; g = f; f = e; e = (d + t1) >>> 0;
+        d = c; c = b; b = a; a = (t1 + t2) >>> 0;
+      }
+      h0 = (h0 + a) >>> 0; h1 = (h1 + b) >>> 0; h2 = (h2 + c) >>> 0; h3 = (h3 + d) >>> 0;
+      h4 = (h4 + e) >>> 0; h5 = (h5 + f) >>> 0; h6 = (h6 + g) >>> 0; h7 = (h7 + h) >>> 0;
+    }
+    return [h0, h1, h2, h3, h4, h5, h6, h7].map(function (x) {
+      return x.toString(16).padStart(8, '0');
+    }).join('');
+  }
+  exports.createHash = function () {
+    let acc = '';
+    return {
+      update: function (chunk) { acc += String(chunk); return this; },
+      digest: function () { return sha256Hex(acc); }
+    };
+  };
+});
 __register('errors.js', function (module, exports, require) {
 'use strict';
 
@@ -28,6 +86,47 @@ class RefusedError extends ArgusError {}
 class DigestMismatchError extends RefusedError {}
 
 module.exports = { ArgusError, ValidationError, RefusedError, DigestMismatchError };
+
+});
+__register('digest.js', function (module, exports, require) {
+'use strict';
+
+// Canonical JSON + SHA-256.
+// node:crypto is the Node standard library, not a vendor SDK.
+// tests/argus-core.test.js pins reference digests so any drift fails.
+
+const { createHash } = require('node:crypto');
+
+function sortDeep(value) {
+  if (Array.isArray(value)) return value.map(sortDeep);
+  if (value !== null && typeof value === 'object') {
+    const out = {};
+    for (const key of Object.keys(value).sort()) out[key] = sortDeep(value[key]);
+    return out;
+  }
+  return value;
+}
+
+function canonicalStringify(value) {
+  const json = JSON.stringify(sortDeep(value));
+  // Match Python ensure_ascii: escape every non-ASCII code unit as XXXX.
+  let out = '';
+  for (let i = 0; i < json.length; i += 1) {
+    const code = json.charCodeAt(i);
+    out += code < 0x80 ? json[i] : `\\u${code.toString(16).padStart(4, '0')}`;
+  }
+  return out;
+}
+
+function sha256Hex(text) {
+  return createHash('sha256').update(text, 'utf8').digest('hex');
+}
+
+function digestPayload(payload) {
+  return sha256Hex(canonicalStringify(payload));
+}
+
+module.exports = { canonicalStringify, sha256Hex, digestPayload };
 
 });
 __register('canary.js', function (module, exports, require) {
@@ -112,6 +211,620 @@ module.exports = {
   runCheck,
   SocraticCanaryValidator,
 };
+
+});
+__register('change_ir.js', function (module, exports, require) {
+'use strict';
+
+// Typed Change IR (ARKON pattern). Never raw shell.
+// A change is a list of typed operations over typed targets. Free-form
+// command strings are rejected at construction, so a model can propose an
+// operation but can never smuggle an arbitrary command past the gate.
+
+const { ValidationError } = require('./errors.js');
+const { digestPayload } = require('./digest.js');
+
+const OpKind = Object.freeze({
+  SET_CONFIG: 'set_config',
+  REVOKE_ACCESS: 'revoke_access',
+  GRANT_ACCESS: 'grant_access',
+  ADD_RULE: 'add_rule',
+  REMOVE_RULE: 'remove_rule',
+  RESTART_COMPONENT: 'restart_component',
+  ROLLBACK: 'rollback',
+  NOTIFY: 'notify',
+});
+const OP_KINDS = new Set(Object.values(OpKind));
+
+const FORBIDDEN_VALUE_TOKENS = Object.freeze([';', '&&', '||', '|', '`', '$(', '\n', '\r']);
+
+class ChangeOp {
+  constructor(kind, target, field = '', value = '') {
+    if (!OP_KINDS.has(kind)) throw new ValidationError(`unknown op kind ${kind}`);
+    if (!target) throw new ValidationError('change op needs a target');
+    if ((kind === OpKind.SET_CONFIG || kind === OpKind.ADD_RULE) && !field) {
+      throw new ValidationError(`${kind} needs a field`);
+    }
+    for (const text of [target, field, value]) {
+      for (const token of FORBIDDEN_VALUE_TOKENS) {
+        if (text.includes(token)) {
+          throw new ValidationError('raw shell syntax is not a Typed Change IR value');
+        }
+      }
+    }
+    this.kind = kind;
+    this.target = target;
+    this.field = field;
+    this.value = value;
+    Object.freeze(this);
+  }
+
+  asDict() {
+    return { kind: this.kind, target: this.target, field: this.field, value: this.value };
+  }
+}
+
+class TypedChangeIR {
+  constructor(changeId, title, ops, { evidenceClaims = [], preventionRule = '' } = {}) {
+    if (!changeId || !title) throw new ValidationError('change IR needs id and title');
+    if (!ops || ops.length === 0) throw new ValidationError('change IR needs at least one op');
+    this.changeId = changeId;
+    this.title = title;
+    this.ops = Object.freeze([...ops]);
+    this.evidenceClaims = Object.freeze([...evidenceClaims]);
+    this.preventionRule = preventionRule;
+    Object.freeze(this);
+  }
+
+  digest() {
+    // Content-addressed SHA-256. Approval binds to this exact value.
+    // Payload keys match the Python core byte for byte (pinned in tests).
+    return digestPayload({
+      change_id: this.changeId,
+      title: this.title,
+      ops: this.ops.map((op) => op.asDict()),
+      evidence_claims: [...this.evidenceClaims],
+      prevention_rule: this.preventionRule,
+    });
+  }
+
+  renderForRole(role) {
+    // One change, three lenses. Same digest under every lens.
+    const opLines = this.ops.map((op) => `${op.kind}:${op.target}`).join(', ');
+    const lenses = {
+      director: `${this.title}. ${this.ops.length} step(s). Digest ${this.digest().slice(0, 12)}.`,
+      secops: `${this.title}. Ops: ${opLines}. Claims: ${this.evidenceClaims.join(',') || 'none'}.`,
+      standby: `Approve ${this.changeId}? ${this.title}. Ops: ${opLines}.`,
+    };
+    if (!(role in lenses)) throw new ValidationError(`unknown role lens ${role}`);
+    return lenses[role];
+  }
+}
+
+module.exports = { OpKind, FORBIDDEN_VALUE_TOKENS, ChangeOp, TypedChangeIR };
+
+});
+__register('evidence.js', function (module, exports, require) {
+'use strict';
+
+// Seven-source Evidence Graph (SupportTrace).
+// Sources are generic kinds, not vendor products, so adapters map their
+// platform onto these seven kinds and keep the vendor name in platformLabel.
+
+const { ValidationError } = require('./errors.js');
+
+const EvidenceSource = Object.freeze({
+  LOGS: 'logs', // Atlassian: audit log
+  IDENTITY: 'identity', // Atlassian: directory and permissions
+  EDGE: 'edge', // Atlassian: gateway and access policy
+  EVENTS: 'events', // Atlassian: webhooks
+  CONFIG: 'config', // Atlassian: project and workflow config
+  DATA: 'data', // Atlassian: issues and pages
+  PIPELINE: 'pipeline', // Atlassian: Bitbucket pipelines
+});
+const SOURCES = new Set(Object.values(EvidenceSource));
+const REQUIRED_SOURCES = Object.freeze(new Set(SOURCES));
+
+class EvidenceItem {
+  constructor(itemId, source, summary, { platformLabel = '', supports = [] } = {}) {
+    if (!itemId || !summary) throw new ValidationError('evidence item needs id and summary');
+    if (!SOURCES.has(source)) throw new ValidationError(`unknown evidence source ${source}`);
+    this.itemId = itemId;
+    this.source = source;
+    this.summary = summary;
+    this.platformLabel = platformLabel;
+    this.supports = Object.freeze([...supports]);
+    Object.freeze(this);
+  }
+}
+
+class EvidenceGraph {
+  constructor() {
+    this.items = new Map();
+  }
+
+  add(item) {
+    if (this.items.has(item.itemId)) {
+      throw new ValidationError(`duplicate evidence item ${item.itemId}`);
+    }
+    this.items.set(item.itemId, item);
+  }
+
+  sourcesPresent() {
+    return new Set([...this.items.values()].map((item) => item.source));
+  }
+
+  missingSources() {
+    const present = this.sourcesPresent();
+    return new Set([...REQUIRED_SOURCES].filter((source) => !present.has(source)));
+  }
+
+  isComplete() {
+    return this.missingSources().size === 0;
+  }
+
+  groundedClaims() {
+    const claims = new Set();
+    for (const item of this.items.values()) {
+      for (const claim of item.supports) claims.add(claim);
+    }
+    return claims;
+  }
+
+  isGrounded(claimIds) {
+    // Yes only when every claimed id traces to cited evidence.
+    const grounded = this.groundedClaims();
+    return claimIds.length > 0 && claimIds.every((id) => grounded.has(id));
+  }
+
+  ungrounded(claimIds) {
+    const grounded = this.groundedClaims();
+    return claimIds.filter((id) => !grounded.has(id));
+  }
+}
+
+module.exports = { EvidenceSource, REQUIRED_SOURCES, EvidenceItem, EvidenceGraph };
+
+});
+__register('provenance.js', function (module, exports, require) {
+'use strict';
+
+// Provenance Thread (Mitos). Walk an incident back to the causing change.
+// Each node seals the node before it with SHA-256, so a broken link is
+// detectable without trusting the store that held the chain.
+
+const { ValidationError } = require('./errors.js');
+const { digestPayload } = require('./digest.js');
+
+const MAX_WALK_STEPS = 9;
+
+class ProvenanceNode {
+  constructor(nodeId, kind, summary, actor, at, parentId = '') {
+    if (!nodeId || !kind || !summary) {
+      throw new ValidationError('provenance node needs id, kind and summary');
+    }
+    this.nodeId = nodeId;
+    this.kind = kind;
+    this.summary = summary;
+    this.actor = actor;
+    this.at = at; // ISO-8601 string, supplied by the adapter clock
+    this.parentId = parentId;
+    Object.freeze(this);
+  }
+
+  digest() {
+    return digestPayload({
+      node_id: this.nodeId,
+      kind: this.kind,
+      summary: this.summary,
+      actor: this.actor,
+      at: this.at,
+      parent_id: this.parentId,
+    });
+  }
+}
+
+class ProvenanceThread {
+  // An ordered chain from root cause (first) to incident (last).
+  constructor() {
+    this.nodes = new Map();
+  }
+
+  add(node) {
+    if (this.nodes.has(node.nodeId)) {
+      throw new ValidationError(`duplicate provenance node ${node.nodeId}`);
+    }
+    if (node.parentId && !this.nodes.has(node.parentId)) {
+      throw new ValidationError(`unknown parent ${node.parentId}`);
+    }
+    this.nodes.set(node.nodeId, node);
+  }
+
+  walkBack(incidentId, maxSteps = MAX_WALK_STEPS) {
+    // Return nodes from the incident back toward the root cause.
+    if (maxSteps < 1) throw new ValidationError('max_steps must be at least 1');
+    const chain = [];
+    const seen = new Set();
+    let currentId = incidentId;
+    while (currentId && chain.length < maxSteps) {
+      if (seen.has(currentId)) throw new ValidationError('cycle in provenance thread');
+      seen.add(currentId);
+      const node = this.nodes.get(currentId);
+      if (node === undefined) {
+        throw new ValidationError(`unknown provenance node ${currentId}`);
+      }
+      chain.push(node);
+      currentId = node.parentId;
+    }
+    return chain;
+  }
+
+  rootCause(incidentId, maxSteps = MAX_WALK_STEPS) {
+    const chain = this.walkBack(incidentId, maxSteps);
+    return chain[chain.length - 1];
+  }
+
+  seal(incidentId) {
+    // Hash-chain seal over the walk. Changes if any node changes.
+    let acc = '';
+    for (const node of [...this.walkBack(incidentId)].reverse()) {
+      acc = digestPayload({ prev: acc, node: node.digest() });
+    }
+    return acc;
+  }
+
+  verifySeal(incidentId, expected) {
+    return this.seal(incidentId) === expected;
+  }
+}
+
+module.exports = { MAX_WALK_STEPS, ProvenanceNode, ProvenanceThread };
+
+});
+__register('receipts.js', function (module, exports, require) {
+'use strict';
+
+// Accessible Merkle-sealed approval receipts (Aletheia).
+// The receipt binds four facts into one Merkle root: the change digest,
+// the approver, the decision and the moment. It renders three ways from
+// the same root: plain text, a spoken sentence for screen readers and
+// voice, and a Braille-ready line (Grade 1 letter mapping).
+
+const { ValidationError } = require('./errors.js');
+const { sha256Hex } = require('./digest.js');
+
+function merkleRoot(leaves) {
+  if (!leaves || leaves.length === 0) {
+    throw new ValidationError('merkle tree needs at least one leaf');
+  }
+  let level = leaves.map((leaf) => sha256Hex(leaf));
+  while (level.length > 1) {
+    if (level.length % 2 === 1) level.push(level[level.length - 1]);
+    const next = [];
+    for (let i = 0; i < level.length; i += 2) next.push(sha256Hex(level[i] + level[i + 1]));
+    level = next;
+  }
+  return level[0];
+}
+
+// Code points verified against the Python _BRAILLE map on 2026-11-03.
+const BRAILLE = Object.freeze({
+  a: '\u2801', b: '\u2803', c: '\u2809', d: '\u2819', e: '\u2811', f: '\u280b',
+  g: '\u281b', h: '\u2813', i: '\u280a', j: '\u281a', k: '\u2805', l: '\u2807',
+  m: '\u280d', n: '\u281d', o: '\u2815', p: '\u280f', q: '\u281f', r: '\u2817',
+  s: '\u280e', t: '\u281e', u: '\u2825', v: '\u2827', w: '\u283a', x: '\u282d',
+  y: '\u283d', z: '\u2835', ' ': ' ',
+  0: '\u281a', 1: '\u2801', 2: '\u2803', 3: '\u2809', 4: '\u2819', 5: '\u2811',
+  6: '\u280b', 7: '\u281b', 8: '\u2813', 9: '\u280a',
+});
+
+function toBraille(text) {
+  return [...text].map((ch) => BRAILLE[ch.toLowerCase()] ?? ' ').join('');
+}
+
+class ApprovalReceipt {
+  constructor(changeDigest, approver, decision, decidedAt, root) {
+    this.changeDigest = changeDigest;
+    this.approver = approver;
+    this.decision = decision;
+    this.decidedAt = decidedAt;
+    this.root = root;
+    Object.freeze(this);
+  }
+
+  leaves() {
+    return [this.changeDigest, this.approver, this.decision, this.decidedAt];
+  }
+
+  plainText() {
+    return (
+      `Decision: ${this.decision}. Approver: ${this.approver}. ` +
+      `At: ${this.decidedAt}. Change: ${this.changeDigest}. Seal: ${this.root}.`
+    );
+  }
+
+  spokenText() {
+    return (
+      `Approval receipt. ${this.approver} ${this.decision} the change ` +
+      `ending ${this.changeDigest.slice(-6)} at ${this.decidedAt}. ` +
+      `Seal ending ${this.root.slice(-6)}.`
+    );
+  }
+
+  brailleText() {
+    return toBraille(this.spokenText());
+  }
+}
+
+function buildReceipt(changeDigest, approver, decision, decidedAt) {
+  if (decision !== 'approved' && decision !== 'rejected') {
+    throw new ValidationError('decision must be approved or rejected');
+  }
+  if (!changeDigest || !approver || !decidedAt) {
+    throw new ValidationError('receipt needs digest, approver and time');
+  }
+  const leaves = [changeDigest, approver, decision, decidedAt];
+  return new ApprovalReceipt(changeDigest, approver, decision, decidedAt, merkleRoot(leaves));
+}
+
+function verifyReceipt(receipt) {
+  return merkleRoot(receipt.leaves()) === receipt.root;
+}
+
+module.exports = { merkleRoot, toBraille, ApprovalReceipt, buildReceipt, verifyReceipt };
+
+});
+__register('standby.js', function (module, exports, require) {
+'use strict';
+
+// Standby On-Call Roster with deterministic auto-failover.
+// Time enters as a number of seconds from the caller's clock port. The
+// domain never reads a wall clock, so failover is fully testable.
+
+const { ValidationError } = require('./errors.js');
+
+const DEFAULT_ACK_WINDOW_SECONDS = 900; // 15 minutes to acknowledge a page
+
+class Engineer {
+  constructor(engineerId, name, reachable = true) {
+    if (!engineerId || !name) throw new ValidationError('engineer needs id and name');
+    this.engineerId = engineerId;
+    this.name = name;
+    this.reachable = reachable;
+    Object.freeze(this);
+  }
+}
+
+class PageOutcome {
+  constructor(paged, escalated, reason) {
+    this.paged = paged;
+    this.escalated = escalated;
+    this.reason = reason;
+    Object.freeze(this);
+  }
+}
+
+class StandbyRoster {
+  // Ordered roster. Index 0 is primary for the current rotation.
+  constructor(engineers, { ackWindowSeconds = DEFAULT_ACK_WINDOW_SECONDS, startIndex = 0 } = {}) {
+    if (!engineers || engineers.length === 0) {
+      throw new ValidationError('roster needs at least one engineer');
+    }
+    if (ackWindowSeconds < 1) throw new ValidationError('ack window must be positive');
+    if (!(startIndex >= 0 && startIndex < engineers.length)) {
+      throw new ValidationError('start_index outside roster');
+    }
+    // Rotate so the engineer on point is first. Rotation must not
+    // change failover order for the rest of the roster.
+    this._order = Object.freeze([...engineers.slice(startIndex), ...engineers.slice(0, startIndex)]);
+    this._ackWindow = ackWindowSeconds;
+  }
+
+  get primary() {
+    return this._order[0];
+  }
+
+  order() {
+    return this._order;
+  }
+
+  whoToPage(elapsedSeconds, acknowledgedBy = '') {
+    // Fail over one step per full ack window with no acknowledgement.
+    if (elapsedSeconds < 0) throw new ValidationError('elapsed time cannot be negative');
+    if (acknowledgedBy) {
+      for (const engineer of this._order) {
+        if (engineer.engineerId === acknowledgedBy) {
+          return new PageOutcome(
+            engineer, engineer !== this.primary, 'acknowledged; no further paging',
+          );
+        }
+      }
+      throw new ValidationError(`acknowledger ${acknowledgedBy} is not on the roster`);
+    }
+    const steps = Math.floor(elapsedSeconds / this._ackWindow);
+    const reachable = this._order.filter((e) => e.reachable);
+    if (reachable.length === 0) {
+      throw new ValidationError('no reachable engineer on the roster');
+    }
+    const target = reachable[Math.min(steps, reachable.length - 1)];
+    if (steps === 0) return new PageOutcome(target, false, 'primary paged, inside ack window');
+    return new PageOutcome(target, true, `no ack after ${steps} window(s); failed over`);
+  }
+}
+
+module.exports = { DEFAULT_ACK_WINDOW_SECONDS, Engineer, PageOutcome, StandbyRoster };
+
+});
+__register('policy_shield.js', function (module, exports, require) {
+'use strict';
+
+// Pre-Tool Policy Shield (Threefold + Lachesis triage).
+// Lifecycle per rule: Observe, then Label False Alarms, then Promote to
+// Enforce. Promotion is deterministic. It needs enough observations and a
+// false-alarm rate at or below the pinned threshold. No model promotes a
+// rule, and no caller can skip the observe stage.
+
+const { ValidationError } = require('./errors.js');
+
+const MIN_OBSERVATIONS_TO_PROMOTE = 20;
+const MAX_FALSE_ALARM_RATE = 0.05;
+
+const ShieldMode = Object.freeze({ OBSERVE: 'observe', ENFORCE: 'enforce' });
+
+const RiskClass = Object.freeze({
+  BENIGN: 'benign',
+  DESTRUCTIVE_WRITE: 'destructive_write',
+  EXFILTRATION: 'exfiltration',
+  UNTRUSTED_TO_ACTION: 'untrusted_to_action',
+  CONFUSED_DEPUTY: 'confused_deputy',
+});
+const RISK_CLASSES = new Set(Object.values(RiskClass));
+
+const TriageDecision = Object.freeze({
+  PROCEED: 'proceed',
+  GUIDE: 'guide',
+  CONFIRM: 'confirm', // interrupt for human approval
+  DENY: 'deny',
+});
+
+class ToolCall {
+  constructor(tool, ruleId, risk, grounded) {
+    if (!tool || !ruleId) throw new ValidationError('tool call needs tool and rule_id');
+    if (!RISK_CLASSES.has(risk)) throw new ValidationError(`unknown risk class ${risk}`);
+    this.tool = tool;
+    this.ruleId = ruleId;
+    this.risk = risk;
+    this.grounded = grounded; // every argument traces to cited evidence
+    Object.freeze(this);
+  }
+}
+
+class PolicyShield {
+  constructor({
+    minObservations = MIN_OBSERVATIONS_TO_PROMOTE,
+    maxFalseAlarmRate = MAX_FALSE_ALARM_RATE,
+  } = {}) {
+    this.minObservations = minObservations;
+    this.maxFalseAlarmRate = maxFalseAlarmRate;
+    this._rules = new Map();
+  }
+
+  _state(ruleId) {
+    if (!this._rules.has(ruleId)) {
+      this._rules.set(ruleId, {
+        mode: ShieldMode.OBSERVE, observations: 0, wouldRefuse: 0, falseAlarms: 0,
+      });
+    }
+    return this._rules.get(ruleId);
+  }
+
+  mode(ruleId) {
+    return this._state(ruleId).mode;
+  }
+
+  falseAlarmRate(ruleId) {
+    const state = this._state(ruleId);
+    if (state.wouldRefuse === 0) return 0.0;
+    return state.falseAlarms / state.wouldRefuse;
+  }
+
+  triage(call) {
+    // Lachesis pre-tool triage. A score and a gate, never a verdict
+    // on ungrounded or exfiltrating calls.
+    if (call.risk === RiskClass.EXFILTRATION) return TriageDecision.DENY;
+    if (!call.grounded) return TriageDecision.CONFIRM;
+    if (call.risk === RiskClass.DESTRUCTIVE_WRITE || call.risk === RiskClass.CONFUSED_DEPUTY) {
+      return TriageDecision.CONFIRM;
+    }
+    if (call.risk === RiskClass.UNTRUSTED_TO_ACTION) return TriageDecision.GUIDE;
+    return TriageDecision.PROCEED;
+  }
+
+  evaluate(call) {
+    // Observe records and lets the call through. Enforce refuses.
+    const decision = this.triage(call);
+    const state = this._state(call.ruleId);
+    state.observations += 1;
+    if (decision === TriageDecision.DENY || decision === TriageDecision.CONFIRM) {
+      state.wouldRefuse += 1;
+      if (state.mode === ShieldMode.OBSERVE) {
+        return TriageDecision.PROCEED; // observed, not yet enforced
+      }
+    }
+    return decision;
+  }
+
+  labelFalseAlarm(ruleId) {
+    const state = this._state(ruleId);
+    if (state.falseAlarms >= state.wouldRefuse) {
+      throw new ValidationError('no observed refusal left to label as false alarm');
+    }
+    state.falseAlarms += 1;
+  }
+
+  canPromote(ruleId) {
+    const state = this._state(ruleId);
+    if (state.mode === ShieldMode.ENFORCE) return [false, 'already enforcing'];
+    if (state.observations < this.minObservations) {
+      return [false, `needs ${this.minObservations} observations, has ${state.observations}`];
+    }
+    const rate = this.falseAlarmRate(ruleId);
+    if (state.wouldRefuse && rate > this.maxFalseAlarmRate) {
+      return [false, `false alarm rate ${rate.toFixed(3)} above ${this.maxFalseAlarmRate.toFixed(3)}`];
+    }
+    return [true, 'promotion thresholds met'];
+  }
+
+  promoteToEnforce(ruleId) {
+    const [ok, reason] = this.canPromote(ruleId);
+    if (!ok) throw new ValidationError(`cannot promote ${ruleId}: ${reason}`);
+    this._state(ruleId).mode = ShieldMode.ENFORCE;
+  }
+}
+
+module.exports = {
+  MIN_OBSERVATIONS_TO_PROMOTE,
+  MAX_FALSE_ALARM_RATE,
+  ShieldMode,
+  RiskClass,
+  TriageDecision,
+  ToolCall,
+  PolicyShield,
+};
+
+});
+__register('ports.js', function (module, exports, require) {
+'use strict';
+
+// Hexagonal ports and the three least-privilege roles.
+// Reader can only read. Evaluator can only run checks in a sandbox.
+// Writer executes a change only after its digest matches the approved
+// digest. Platform adapters implement these shapes; the domain holds
+// no credential and no SDK handle.
+//
+// Expected adapter shapes (duck-typed, since JS has no Protocol):
+//   Reader:    fetchEvidence(incidentId) -> object of string to string
+//   Evaluator: runCanary(candidateId, checkFn) -> CanaryResult
+//   Clock:     nowIso() -> string
+//   Writer:    execute(change, approvedDigest) -> string
+
+const { DigestMismatchError, RefusedError } = require('./errors.js');
+
+function guardReaderWriteAttempt(operation) {
+  // Shared refusal used by read-only adapters and their tests.
+  throw new RefusedError(`reader role cannot perform write operation: ${operation}`);
+}
+
+function verifyBeforeWrite(change, approvedDigest) {
+  // The one check every Writer adapter must pass before it writes.
+  if (!approvedDigest || change.digest() !== approvedDigest) {
+    throw new DigestMismatchError(
+      'writer refused: approval digest does not match change digest',
+    );
+  }
+}
+
+module.exports = { guardReaderWriteAttempt, verifyBeforeWrite };
 
 });
 __register('pipeline_facts.js', function (module, exports, require) {
@@ -548,14 +1261,164 @@ module.exports = { TRANSFORMS, repairPipelineYaml };
 const ArgusRules = __require('./rules.js');
 const ArgusFacts = __require('./pipeline_facts.js');
 const ArgusRepair = __require('./pipeline_repair.js');
+const ArgusChange = __require('./change_ir.js');
+const ArgusEvidence = __require('./evidence.js');
+const ArgusProvenance = __require('./provenance.js');
+const ArgusReceipts = __require('./receipts.js');
+const ArgusStandby = __require('./standby.js');
+const ArgusShield = __require('./policy_shield.js');
+const ArgusPorts = __require('./ports.js');
 (function () {
+  const sampleYaml = "image: node:latest\npipelines:\n  default:\n    - step:\n        name: Ship it\n        script:\n          - npm install\n          - npm test -- --passWithNoTests || true\n          - echo green || exit 0\n    - step:\n        deployment: production\n        script:\n          - ./deploy-prod.sh";
   const input = document.getElementById('yaml');
   const summary = document.getElementById('summary');
   const tbody = document.getElementById('rows');
   const form = document.getElementById('run');
   const repair = document.getElementById('repair');
+  const seedReset = document.getElementById('seed-reset');
   const repairSummary = document.getElementById('repair-summary');
+  const ruleSelect = document.getElementById('rule-select');
+  const digestInput = document.getElementById('approval-digest');
+  const syncDigestBtn = document.getElementById('sync-digest');
+  const elapsedSelect = document.getElementById('elapsed-seconds');
+  const governForm = document.getElementById('govern-form');
+  const governStatus = document.getElementById('govern-status');
+  const standbyVerdict = document.getElementById('standby-verdict');
+  const receiptSpoken = document.getElementById('receipt-spoken');
+  const receiptBraille = document.getElementById('receipt-braille');
+  const receiptPlain = document.getElementById('receipt-plain');
+  const runtimeStatus = document.getElementById('runtime-status');
+  const evidenceSummary = document.getElementById('evidence-summary');
+  const shieldSummary = document.getElementById('shield-summary');
+  const shield = new ArgusShield.PolicyShield();
+
+  const thread = new ArgusProvenance.ProvenanceThread();
+  thread.add(new ArgusProvenance.ProvenanceNode(
+    'commit-9f2c41e', 'commit', 'Mask npm test exit code in bitbucket-pipelines.yml',
+    'dev-alex', '2026-11-05T03:20:00Z'
+  ));
+  thread.add(new ArgusProvenance.ProvenanceNode(
+    'deploy-prod-482', 'deploy', 'Bitbucket Pipeline #482 reported green',
+    'bitbucket-pipelines', '2026-11-05T03:25:00Z', 'commit-9f2c41e'
+  ));
+  thread.add(new ArgusProvenance.ProvenanceNode(
+    'DEMO-11', 'incident', 'JSM P1 checkout outage after green release',
+    'jsm-trigger', '2026-11-05T03:32:24Z', 'deploy-prod-482'
+  ));
+  document.getElementById('prov-chain').textContent =
+    thread.walkBack('DEMO-11').map(function (n) { return n.nodeId + ' (' + n.kind + ')'; }).join(' -> ');
+  document.getElementById('prov-root').textContent = thread.rootCause('DEMO-11').nodeId;
+  document.getElementById('prov-seal').textContent = thread.seal('DEMO-11');
+
+  ArgusRules.RULES.forEach(function (rule) {
+    const opt = document.createElement('option');
+    opt.value = rule.id;
+    opt.textContent = rule.id + ': ' + rule.title;
+    ruleSelect.appendChild(opt);
+  });
+
+  let currentChange = null;
+  function buildProposal(ruleId) {
+    const rule = ArgusRules.ruleById(ruleId);
+    const claimId = 'DEMO-11:' + rule.id;
+    const graph = new ArgusEvidence.EvidenceGraph();
+    [
+      ['DEMO-11-data', ArgusEvidence.EvidenceSource.DATA, 'JSM P1 incident DEMO-11'],
+      ['DEMO-11-identity', ArgusEvidence.EvidenceSource.IDENTITY, 'On-call SRE roster'],
+      ['DEMO-11-events', ArgusEvidence.EvidenceSource.EVENTS, 'Issue webhook trigger'],
+      ['DEMO-11-pipeline', ArgusEvidence.EvidenceSource.PIPELINE, 'Bitbucket Pipelines YAML'],
+      ['DEMO-11-config', ArgusEvidence.EvidenceSource.CONFIG, 'Branch restriction policy'],
+      ['DEMO-11-logs', ArgusEvidence.EvidenceSource.LOGS, 'Socratic Canary exit log'],
+      ['DEMO-11-edge', ArgusEvidence.EvidenceSource.EDGE, 'Zero-egress boundary'],
+    ].forEach(function (entry) {
+      graph.add(new ArgusEvidence.EvidenceItem(entry[0], entry[1], entry[2], {
+        platformLabel: 'Atlassian Forge', supports: [claimId]
+      }));
+    });
+    const grounded = graph.isGrounded([claimId]);
+    evidenceSummary.textContent =
+      graph.sourcesPresent().size + '/7 sources present (complete: '
+      + (graph.isComplete() ? 'yes' : 'no') + ', grounded claim: ' + claimId + ').';
+
+    const call = new ArgusShield.ToolCall(
+      'escalate-standby-responder',
+      rule.id,
+      ArgusShield.RiskClass.DESTRUCTIVE_WRITE,
+      grounded
+    );
+    const triage = shield.triage(call);
+    shield.evaluate(call);
+    shieldSummary.textContent =
+      'Lachesis triage: ' + triage + ' (risk: ' + call.risk + ', grounded: '
+      + (grounded ? 'yes' : 'no') + '). Threefold shield mode: ' + shield.mode(rule.id) + '.';
+
+    const ops = ArgusRules.repairFactsForRule(rule.id).map(function (fact) {
+      return new ArgusChange.ChangeOp(
+        ArgusChange.OpKind.SET_CONFIG,
+        'bitbucket-pipelines.yml',
+        fact.field,
+        fact.value
+      );
+    });
+    currentChange = new ArgusChange.TypedChangeIR(
+      'proposal-DEMO-11-' + rule.id + '-1',
+      'Repair proposal for ' + rule.id + ': ' + rule.title,
+      ops,
+      { evidenceClaims: [claimId], preventionRule: rule.id }
+    );
+    const d = currentChange.digest();
+    document.getElementById('change-id').textContent = currentChange.changeId;
+    document.getElementById('change-digest').textContent = d;
+    document.getElementById('lens-director').textContent = currentChange.renderForRole('director');
+    document.getElementById('lens-secops').textContent = currentChange.renderForRole('secops');
+    document.getElementById('lens-standby').textContent = currentChange.renderForRole('standby');
+    digestInput.value = d;
+  }
+
+  function executeGovernance() {
+    if (!currentChange) buildProposal(ruleSelect.value || 'r01');
+    const suppliedDigest = digestInput.value.trim();
+    try {
+      ArgusPorts.verifyBeforeWrite(currentChange, suppliedDigest);
+    } catch (err) {
+      governStatus.className = 'summary fail';
+      governStatus.textContent =
+        'Write blocked by digest guard: the entered SHA-256 digest does not match the stored Typed Change IR ('
+        + err.message + '). Press Sync digest from proposal to restore the exact 64-character hex digest.';
+      standbyVerdict.textContent = 'No JSM assignment executed because digest verification failed closed.';
+      receiptSpoken.textContent = 'No approval receipt issued.';
+      receiptBraille.textContent = '';
+      receiptPlain.textContent = '';
+      return;
+    }
+    const roster = new ArgusStandby.StandbyRoster([
+      new ArgusStandby.Engineer('acc-dimitris', 'Dimitris Lagos (Primary SRE)'),
+      new ArgusStandby.Engineer('acc-eleni', 'Eleni Papadopoulou (Standby SRE)')
+    ]);
+    const elapsed = Number(elapsedSelect.value || 0);
+    const pageOutcome = roster.whoToPage(elapsed);
+    const receipt = ArgusReceipts.buildReceipt(
+      currentChange.digest(),
+      'dimitris.lagos',
+      'approved',
+      '2026-11-05T11:30:00Z'
+    );
+    governStatus.className = 'summary pass';
+    governStatus.textContent =
+      'Digest verified against ' + currentChange.changeId + '. Merkle receipt sealed.';
+    standbyVerdict.textContent =
+      'Paged responder: ' + pageOutcome.paged.name + ' [' + pageOutcome.paged.engineerId + ']. '
+      + 'Escalated: ' + (pageOutcome.escalated ? 'yes' : 'no') + ' (' + pageOutcome.reason + ').';
+    receiptSpoken.textContent = receipt.spokenText();
+    receiptBraille.textContent = receipt.brailleText();
+    receiptPlain.textContent = receipt.plainText();
+  }
+
   function render() {
+    if (!input.value.trim()) {
+      repairSummary.textContent =
+        'The pipeline editor is empty. Paste a bitbucket-pipelines.yml file or press Reset to sample P1 incident (DEMO-11).';
+    }
     const facts = ArgusFacts.extractPipelineFacts(input.value);
     const out = ArgusRules.evaluateRules(facts);
     const passing = out.results.filter(function (r) { return r.clean; }).length;
@@ -576,8 +1439,14 @@ const ArgusRepair = __require('./pipeline_repair.js');
     });
     document.getElementById('passing').textContent = passing + '/20 rules passing';
   }
+
   form.addEventListener('submit', function (e) { e.preventDefault(); render(); });
   repair.addEventListener('click', function () {
+    if (!input.value.trim()) {
+      repairSummary.textContent =
+        'The pipeline editor is empty. Press Reset to sample P1 incident (DEMO-11) before applying repairs.';
+      return;
+    }
     const result = ArgusRepair.repairPipelineYaml(input.value);
     input.value = result.yaml;
     repairSummary.textContent = result.applied.length
@@ -587,6 +1456,43 @@ const ArgusRepair = __require('./pipeline_repair.js');
         + (result.unsupported.join(', ') || 'none') + '.';
     render();
   });
+  seedReset.addEventListener('click', function () {
+    input.value = sampleYaml;
+    repairSummary.textContent = 'Loaded synthetic JSM P1 incident DEMO-11 and fake-green Bitbucket pipeline.';
+    ruleSelect.value = 'r01';
+    buildProposal('r01');
+    executeGovernance();
+    render();
+  });
+  ruleSelect.addEventListener('change', function () {
+    buildProposal(ruleSelect.value);
+    executeGovernance();
+  });
+  syncDigestBtn.addEventListener('click', function () {
+    if (currentChange) digestInput.value = currentChange.digest();
+    executeGovernance();
+  });
+  elapsedSelect.addEventListener('change', executeGovernance);
+  governForm.addEventListener('submit', function (e) {
+    e.preventDefault();
+    executeGovernance();
+  });
   input.addEventListener('input', render);
+
+  buildProposal('r01');
+  executeGovernance();
   render();
+
+  if (typeof globalThis.__argusBridgeInvoke === 'function') {
+    Promise.resolve(globalThis.__argusBridgeInvoke('getArgusStatus', {}))
+      .then(function (res) {
+        if (res && runtimeStatus) {
+          runtimeStatus.textContent =
+            'Status: connected to Forge resolver (' + (res.status || 'ready')
+            + ', storage: ' + (res.planStorage || 'forge-kvs')
+            + ', rules accepted: ' + (res.rulesAccepted || '20/20') + ').';
+        }
+      })
+      .catch(function () {});
+  }
 })();

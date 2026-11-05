@@ -14,6 +14,9 @@
 const {
   ArgusError,
   CanaryFixture,
+  EvidenceGraph,
+  EvidenceItem,
+  EvidenceSource,
   ProvenanceNode,
   ProvenanceThread,
   evaluateRules,
@@ -26,6 +29,7 @@ const { InMemoryEvaluator } = require('./argus/adapters/in_memory.js');
 const {
   AtlassianReader,
   AtlassianWriter,
+  buildPostIncidentPage,
 } = require('./adapters/atlassian.js');
 const { makeForgeClient } = require('./adapters/forge_client.js');
 const { makeForgePlanStore, InMemoryPlanStore } = require('./adapters/plan_store.js');
@@ -112,6 +116,76 @@ function evaluationSummary(evaluation) {
   };
 }
 
+function buildIncidentEvidenceGraph(issueKey, evidence = {}, linkedWork = [], { synthetic = false } = {}) {
+  const graph = new EvidenceGraph();
+  const key = issueKey || 'seed-incident';
+  const claim = `${key}:r01`;
+  if (synthetic) {
+    graph.add(new EvidenceItem(`${key}-data`, EvidenceSource.DATA, `JSM incident ${key}`, {
+      platformLabel: 'Jira Service Management', supports: [claim],
+    }));
+    graph.add(new EvidenceItem(`${key}-identity`, EvidenceSource.IDENTITY, 'On-call responder roster', {
+      platformLabel: 'Atlassian Directory', supports: [claim],
+    }));
+    graph.add(new EvidenceItem(`${key}-events`, EvidenceSource.EVENTS, 'Issue webhook trigger', {
+      platformLabel: 'Atlassian Forge Trigger', supports: [claim],
+    }));
+    graph.add(new EvidenceItem(`${key}-pipeline`, EvidenceSource.PIPELINE, 'Bitbucket Pipelines YAML facts', {
+      platformLabel: 'Bitbucket Pipelines', supports: [claim],
+    }));
+    graph.add(new EvidenceItem(`${key}-config`, EvidenceSource.CONFIG, 'Branch restriction merge check policy', {
+      platformLabel: 'Bitbucket Branch Restrictions', supports: [claim],
+    }));
+    graph.add(new EvidenceItem(`${key}-logs`, EvidenceSource.LOGS, 'Socratic Canary exit code log', {
+      platformLabel: 'Forge Runtime Logs', supports: [claim],
+    }));
+    graph.add(new EvidenceItem(`${key}-edge`, EvidenceSource.EDGE, 'Zero-egress boundary policy', {
+      platformLabel: 'Runs on Atlassian', supports: [claim],
+    }));
+  } else {
+    graph.add(new EvidenceItem(
+      `${key}-issue`,
+      EvidenceSource.DATA,
+      evidence['issue.summary'] || `Issue ${key}`,
+      { platformLabel: 'Jira', supports: [claim] },
+    ));
+    if (evidence['issue.assignee']) {
+      graph.add(new EvidenceItem(
+        `${key}-assignee`,
+        EvidenceSource.IDENTITY,
+        `Assignee ${evidence['issue.assignee']}`,
+        { platformLabel: 'Atlassian Identity', supports: [claim] },
+      ));
+    }
+    if (evidence['issue.updated']) {
+      graph.add(new EvidenceItem(
+        `${key}-updated`,
+        EvidenceSource.EVENTS,
+        `Updated at ${evidence['issue.updated']}`,
+        { platformLabel: 'Jira Events', supports: [claim] },
+      ));
+    }
+    linkedWork.forEach((link, idx) => {
+      let source = EvidenceSource.DATA;
+      if (link.kind === 'bitbucket') source = EvidenceSource.PIPELINE;
+      else if (link.kind === 'confluence') source = EvidenceSource.CONFIG;
+      graph.add(new EvidenceItem(
+        `${key}-link-${idx}`,
+        source,
+        link.title || link.id || `Linked item ${idx}`,
+        { platformLabel: link.kind || 'linked-work', supports: [claim] },
+      ));
+    });
+  }
+  return Object.freeze({
+    sourcesPresent: [...graph.sourcesPresent()],
+    missingSources: [...graph.missingSources()],
+    isComplete: graph.isComplete(),
+    groundedClaims: [...graph.groundedClaims()],
+    itemCount: graph.items.size,
+  });
+}
+
 async function getArgusStatus() {
   const validation = validateAllRules();
   return {
@@ -146,11 +220,18 @@ async function onIssueEvent(...args) {
   const issueKey = issueKeyFrom(args);
   if (reader && issueKey) {
     const evidence = await reader.fetchEvidence(issueKey);
+    const linkedWork = await reader.fetchLinkedWork(issueKey);
+    const evidenceGraph = buildIncidentEvidenceGraph(issueKey, evidence, linkedWork);
     logOutcome('onIssueEvent', `live ${issueKey}`);
-    return { status: 'live', issueKey, evidence, links: [] };
+    return { status: 'live', issueKey, evidence, links: linkedWork, evidenceGraph };
   }
   logOutcome('onIssueEvent', 'seed-demo');
-  return { status: 'seed-demo', liveEvidence: NOT_CONNECTED, links: [] };
+  return {
+    status: 'seed-demo',
+    liveEvidence: NOT_CONNECTED,
+    links: [],
+    evidenceGraph: buildIncidentEvidenceGraph(issueKey, {}, [], { synthetic: true }),
+  };
 }
 
 async function runCanaryKillTest(...args) {
@@ -184,18 +265,36 @@ async function traceIncidentProvenance(...args) {
       const evidence = await reader.fetchEvidence(issueKey);
       const linkedWork = await reader.fetchLinkedWork(issueKey);
       const thread = new ProvenanceThread();
+      let parentId = '';
+      linkedWork.slice(0, 8).forEach((link, idx) => {
+        const nodeId = String(link.id || `linked-${idx}`);
+        if (!thread.nodes.has(nodeId)) {
+          thread.add(new ProvenanceNode(
+            nodeId,
+            link.kind || 'linked-work',
+            link.title || nodeId,
+            link.relationship || 'associated',
+            evidence['issue.updated'] || '',
+            parentId,
+          ));
+          parentId = nodeId;
+        }
+      });
       thread.add(new ProvenanceNode(
         issueKey, 'incident',
         evidence['issue.summary'] || issueKey,
         evidence['issue.assignee'] || 'unassigned',
         evidence['issue.updated'] || '',
+        parentId,
       ));
+      const evidenceGraph = buildIncidentEvidenceGraph(issueKey, evidence, linkedWork);
       logOutcome('traceIncidentProvenance', `partial-live ${issueKey}`);
       return {
         status: 'partial-live',
         issueKey,
         evidence,
         linkedWork,
+        evidenceGraph,
         walkBack: thread.walkBack(issueKey).map((n) => n.nodeId),
         rootCause: '',
         seal: thread.seal(issueKey),
@@ -218,6 +317,7 @@ async function traceIncidentProvenance(...args) {
     syntheticSeed: true,
     issueKey,
     liveEvidence: NOT_CONNECTED,
+    evidenceGraph: buildIncidentEvidenceGraph(issueKey || 'seed-incident', {}, [], { synthetic: true }),
     walkBack: thread.walkBack('seed-incident').map((n) => n.nodeId),
     rootCause: thread.rootCause('seed-incident').nodeId,
     seal: thread.seal('seed-incident'),
@@ -252,6 +352,7 @@ async function proposeTypedChange(...args) {
       director: proposal.director,
       secops: proposal.secops,
       standby: proposal.standby,
+      shield: proposal.shield,
     };
   } catch (err) {
     if (err instanceof ArgusError) return refused(err);
@@ -276,13 +377,72 @@ async function escalateStandbyResponder(...args) {
   return result;
 }
 
+async function openRepairPullRequest(...args) {
+  const result = await governance.approveAndOpenRepairPr({
+    issueKey: issueKeyFrom(args),
+    changeId: findField(args, 'changeId'),
+    approvalDigest: findField(args, 'approvalDigest'),
+    approvedBy: findField(args, 'approvedBy') || findField(args, 'accountId'),
+    workspace: findField(args, 'workspace') || findField(args, 'workspaceId'),
+    repository: findField(args, 'repository') || findField(args, 'repoId'),
+    sourceBranch: findField(args, 'sourceBranch'),
+    pipelinePath: findField(args, 'pipelinePath') || 'bitbucket-pipelines.yml',
+    pipelineYaml: findField(args, 'pipelineYaml'),
+  });
+  logOutcome('openRepairPullRequest', `${result.status} executed=${result.executed === true}`);
+  return result;
+}
+
+async function publishPostIncidentReport(...args) {
+  const issueKey = issueKeyFrom(args) || 'UNSPECIFIED';
+  const spaceId = findField(args, 'spaceId');
+  const yaml = findField(args, 'pipelineYaml');
+  const facts = extractPipelineFacts(yaml);
+  const evaluation = evaluateRules(facts);
+  const provenance = await traceIncidentProvenance(...args);
+  const page = buildPostIncidentPage({
+    issueKey,
+    evaluation,
+    seal: provenance.seal || '',
+    rootCause: provenance.rootCause || '',
+  });
+  if (forgeClient && spaceId) {
+    const created = await forgeClient.createConfluencePage(spaceId, page);
+    logOutcome('publishPostIncidentReport', `published ${issueKey}`);
+    return {
+      status: 'published',
+      executed: true,
+      issueKey,
+      spaceId,
+      page,
+      created,
+    };
+  }
+  logOutcome('publishPostIncidentReport', `draft-only ${issueKey}`);
+  return {
+    status: 'draft-only',
+    executed: false,
+    liveEvidence: forgeClient ? 'missing-space-id' : NOT_CONNECTED,
+    issueKey,
+    spaceId,
+    page,
+  };
+}
+
 exports.resolver = makeResolverHandler({
   getArgusStatus,
   evaluatePipeline,
   getProposalStatus,
+  traceIncidentProvenance,
+  proposeTypedChange,
+  escalateStandbyResponder,
+  openRepairPullRequest,
+  publishPostIncidentReport,
 });
 exports.onIssueEvent = onIssueEvent;
 exports.runCanaryKillTest = runCanaryKillTest;
 exports.traceIncidentProvenance = traceIncidentProvenance;
 exports.proposeTypedChange = proposeTypedChange;
 exports.escalateStandbyResponder = escalateStandbyResponder;
+exports.openRepairPullRequest = openRepairPullRequest;
+exports.publishPostIncidentReport = publishPostIncidentReport;

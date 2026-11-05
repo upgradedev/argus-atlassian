@@ -14,7 +14,10 @@ const {
   DigestMismatchError,
   Engineer,
   OpKind,
+  PolicyShield,
+  RiskClass,
   StandbyRoster,
+  ToolCall,
   TypedChangeIR,
   ValidationError,
   buildReceipt,
@@ -87,6 +90,7 @@ function publicEnvelope(envelope, storageMode) {
     secops: change.renderForRole('secops'),
     standby: change.renderForRole('standby'),
     receipt: envelope.receipt ?? null,
+    shield: envelope.shield ?? null,
     executions: envelope.executions ?? {},
     repairPr: envelope.repairPr ?? null,
     executedAt: envelope.executedAt ?? null,
@@ -109,9 +113,26 @@ function createGovernance({
   writer = null,
   clock = { nowIso: () => new Date().toISOString() },
   storageMode = store?.mode ?? 'unknown-store',
+  shield = new PolicyShield(),
 } = {}) {
   if (!store || typeof store.get !== 'function' || typeof store.set !== 'function') {
     throw new ValidationError('governance requires an async key-value plan store');
+  }
+
+  function evaluateShield(toolName, ruleId, risk, grounded = true) {
+    const call = new ToolCall(toolName, ruleId, risk, grounded);
+    const triage = shield.triage(call);
+    const effectiveDecision = shield.evaluate(call);
+    const [promotable, promotionReason] = shield.canPromote(ruleId);
+    return Object.freeze({
+      ruleId,
+      mode: shield.mode(ruleId),
+      triage,
+      effectiveDecision,
+      falseAlarmRate: shield.falseAlarmRate(ruleId),
+      promotable,
+      promotionReason,
+    });
   }
 
   async function nextSequence(issueKey, ruleId) {
@@ -152,6 +173,7 @@ function createGovernance({
         preventionRule: ruleId,
       },
     );
+    const shieldReport = evaluateShield('propose-typed-change', ruleId, RiskClass.BENIGN, true);
     const envelope = {
       version: 1,
       status: 'proposed',
@@ -162,6 +184,7 @@ function createGovernance({
       createdAt: clock.nowIso(),
       change: serializeChange(change),
       receipt: null,
+      shield: shieldReport,
       executions: {},
       repairPr: null,
     };
@@ -231,6 +254,12 @@ function createGovernance({
         throw err;
       }
 
+      const shieldReport = evaluateShield(
+        'escalate-standby-responder',
+        envelope.ruleId,
+        RiskClass.DESTRUCTIVE_WRITE,
+        true,
+      );
       const selected = selectResponder({ standbyAccountId, roster, elapsedSeconds });
       if (!selected) {
         return Object.freeze({
@@ -239,6 +268,7 @@ function createGovernance({
           executed: false,
           changeId: envelope.changeId,
           digest: change.digest(),
+          shield: shieldReport,
           reason: 'plan verified; no standby responder was selected',
         });
       }
@@ -252,6 +282,7 @@ function createGovernance({
           digest: change.digest(),
           wouldAssignTo: selected.accountId,
           escalated: selected.escalated,
+          shield: shieldReport,
           reason: `${selected.reason}; no live Atlassian writer is connected`,
         });
       }
@@ -275,6 +306,7 @@ function createGovernance({
         executedAt,
         assignedTo: selected.accountId,
         receipt,
+        shield: shieldReport,
         executions: {
           ...(envelope.executions ?? {}),
           escalation: { assignedTo: selected.accountId, executedAt, receipt },
@@ -291,6 +323,7 @@ function createGovernance({
         issueKey: envelope.issueKey,
         assignedTo: selected.accountId,
         escalated: selected.escalated,
+        shield: shieldReport,
         receipt,
       });
     } catch (err) {
@@ -332,6 +365,12 @@ function createGovernance({
         throw err;
       }
 
+      const shieldReport = evaluateShield(
+        'open-repair-pr',
+        envelope.ruleId,
+        RiskClass.DESTRUCTIVE_WRITE,
+        true,
+      );
       const repair = typeof pipelineYaml === 'string' && pipelineYaml
         ? repairPipelineYaml(pipelineYaml)
         : null;
@@ -348,6 +387,7 @@ function createGovernance({
           changeId: envelope.changeId,
           digest: change.digest(),
           repair,
+          shield: shieldReport,
           reason: 'plan verified; no live Bitbucket writer is connected',
         });
       }
@@ -359,6 +399,7 @@ function createGovernance({
           changeId: envelope.changeId,
           digest: change.digest(),
           repair,
+          shield: shieldReport,
           reason: 'plan verified; workspace and repository are required to open the PR',
         });
       }
@@ -384,6 +425,7 @@ function createGovernance({
       await store.set(`proposal:${envelope.changeId}`, {
         ...envelope,
         status: executions.escalation ? 'executed' : 'repair-pr-open',
+        shield: shieldReport,
         executions,
         repairPr: details,
       });
@@ -396,6 +438,7 @@ function createGovernance({
         digest: change.digest(),
         issueKey: envelope.issueKey,
         repairPr: details,
+        shield: shieldReport,
         receipt,
       });
     } catch (err) {

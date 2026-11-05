@@ -15,8 +15,8 @@
   <p class="lead">Argus links JSM incidents to linked Bitbucket work, fires a synthetic
   canary to expose fake-green gates, and returns a re-verified repair patch. This page runs
   the same twenty Elenchos rules as the Forge app, in your browser, on text you control.</p>
-  <p class="status">Status: demo build. It evaluates the YAML below only. It does not
-  connect to your Atlassian site and sends nothing anywhere.</p>
+  <p id="runtime-status" class="status" role="status" aria-live="polite">Status: demo build. It evaluates the Bitbucket Pipelines YAML below
+  directly in your browser. It does not connect to your Atlassian site and sends nothing anywhere.</p>
   <form id="run">
     <label for="yaml">bitbucket-pipelines.yml (edit it, the verdict updates as you type)</label>
     <textarea id="yaml" name="yaml" spellcheck="false">image: node:latest
@@ -32,8 +32,11 @@ pipelines:
         deployment: production
         script:
           - ./deploy-prod.sh</textarea>
-    <button type="submit">Run the kill-test</button>
-    <button id="repair" class="secondary" type="button">Apply safe deterministic repairs</button>
+    <div class="actions">
+      <button type="submit">Run the kill-test</button>
+      <button id="repair" class="secondary" type="button">Apply safe deterministic repairs</button>
+      <button id="seed-reset" class="secondary" type="button">Reset to sample P1 incident (DEMO-11)</button>
+    </div>
   </form>
   <p id="repair-summary" class="repair" role="status" aria-live="polite"></p>
   <p id="summary" class="summary" role="status" aria-live="polite"></p>
@@ -48,6 +51,72 @@ pipelines:
   it stays flagged until the app reads it from the API. Each rule earned its id by
   separating a violating fixture (exit 1) from a clean one (exit 0) in the Socratic
   Kill-Test. A check that cannot separate the two is thrown out before a human sees it.</p>
+
+  <section aria-labelledby="gov-heading">
+    <h2 id="gov-heading">Incident provenance, Typed Change IR, and Merkle approval receipt</h2>
+    <div class="card" aria-label="Provenance thread for incident DEMO-11">
+      <dl>
+        <dt>Provenance walk (JSM incident back to commit)</dt>
+        <dd id="prov-chain" class="mono"></dd>
+        <dt>Root cause node</dt>
+        <dd id="prov-root" class="mono"></dd>
+        <dt>SHA-256 provenance seal</dt>
+        <dd id="prov-seal" class="mono"></dd>
+        <dt>SupportTrace 7-source evidence graph</dt>
+        <dd id="evidence-summary"></dd>
+        <dt>Threefold and Lachesis pre-tool policy shield</dt>
+        <dd id="shield-summary"></dd>
+      </dl>
+    </div>
+
+    <form id="govern-form">
+      <label for="rule-select">Select Elenchos rule for Typed Change IR proposal</label>
+      <select id="rule-select" name="ruleId"></select>
+
+      <div class="card" aria-label="Typed Change IR role lenses">
+        <dl>
+          <dt>Proposal ID</dt>
+          <dd id="change-id" class="mono"></dd>
+          <dt>Content-addressed SHA-256 digest</dt>
+          <dd id="change-digest" class="mono"></dd>
+          <dt>Engineering Director / CISO lens</dt>
+          <dd id="lens-director"></dd>
+          <dt>SecOps / SRE Lead lens</dt>
+          <dd id="lens-secops"></dd>
+          <dt>JSM Standby On-Call Engineer lens</dt>
+          <dd id="lens-standby"></dd>
+        </dl>
+      </div>
+
+      <label for="approval-digest">Approval SHA-256 digest (edit a character to test fail-closed digest verification)</label>
+      <input id="approval-digest" name="approvalDigest" type="text" spellcheck="false">
+
+      <label for="elapsed-seconds">JSM on-call elapsed time (900-second SLA window)</label>
+      <select id="elapsed-seconds" name="elapsedSeconds">
+        <option value="0">0 seconds: Primary SRE Dimitris Lagos inside 900s SLA window</option>
+        <option value="960">960 seconds: SLA missed, automatic failover to Standby SRE Eleni Papadopoulou</option>
+      </select>
+
+      <div class="actions">
+        <button id="approve-btn" type="submit">Verify digest, page responder, and seal receipt</button>
+        <button id="sync-digest" class="secondary" type="button">Sync digest from proposal</button>
+      </div>
+    </form>
+
+    <p id="govern-status" class="summary" role="status" aria-live="polite"></p>
+    <div class="card" aria-label="Standby failover and Merkle-sealed receipt">
+      <dl>
+        <dt>JSM Standby On-Call failover verdict</dt>
+        <dd id="standby-verdict" role="status" aria-live="polite"></dd>
+        <dt>Spoken approval receipt (screen reader and voice)</dt>
+        <dd id="receipt-spoken" role="status" aria-live="polite"></dd>
+        <dt>Grade-1 Braille approval receipt</dt>
+        <dd id="receipt-braille" class="braille" aria-label="Grade 1 Braille receipt"></dd>
+        <dt>Plain receipt and Merkle root</dt>
+        <dd id="receipt-plain" class="mono"></dd>
+      </dl>
+    </div>
+  </section>
 </main>
 <script src="app.js" defer></script>
 </body>
