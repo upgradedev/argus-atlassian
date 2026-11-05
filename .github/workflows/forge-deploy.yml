@@ -90,19 +90,39 @@ jobs:
               out.write(f'host={host}\n')
           PY
 
-      - name: Install into Jira and JSM
+      - name: Install or upgrade in Jira and JSM
         if: inputs.installJira
-        run: >-
-          forge install --site "${{ steps.site.outputs.host }}"
-          --product Jira --environment "$FORGE_ENVIRONMENT"
-          --confirm-scopes --non-interactive --verbose
+        run: |
+          set +e
+          forge install --site "${{ steps.site.outputs.host }}" \
+            --product Jira --environment "$FORGE_ENVIRONMENT" \
+            --confirm-scopes --non-interactive --verbose 2>&1 | tee /tmp/forge-install.log
+          code=${PIPESTATUS[0]}
+          set -e
+          if [ "$code" -ne 0 ] && grep -qi 'already installed' /tmp/forge-install.log; then
+            forge install --site "${{ steps.site.outputs.host }}" \
+              --product Jira --environment "$FORGE_ENVIRONMENT" \
+              --confirm-scopes --non-interactive --verbose --upgrade
+          elif [ "$code" -ne 0 ]; then
+            exit "$code"
+          fi
 
-      - name: Install into Confluence
+      - name: Install or upgrade in Confluence
         if: inputs.installConfluence
-        run: >-
-          forge install --site "${{ steps.site.outputs.host }}"
-          --product Confluence --environment "$FORGE_ENVIRONMENT"
-          --confirm-scopes --non-interactive --verbose
+        run: |
+          set +e
+          forge install --site "${{ steps.site.outputs.host }}" \
+            --product Confluence --environment "$FORGE_ENVIRONMENT" \
+            --confirm-scopes --non-interactive --verbose 2>&1 | tee /tmp/forge-install.log
+          code=${PIPESTATUS[0]}
+          set -e
+          if [ "$code" -ne 0 ] && grep -qi 'already installed' /tmp/forge-install.log; then
+            forge install --site "${{ steps.site.outputs.host }}" \
+              --product Confluence --environment "$FORGE_ENVIRONMENT" \
+              --confirm-scopes --non-interactive --verbose --upgrade
+          elif [ "$code" -ne 0 ]; then
+            exit "$code"
+          fi
 
       # No Compass step: new Compass modules are rejected by Atlassian's
       # Compass end-of-life plan. No Bitbucket step: Bitbucket is the
