@@ -1,6 +1,9 @@
 'use strict';
 
-// Compass data-provider adapter.
+// Compass data-provider payload adapter (parked, not deployed).
+// Atlassian's Compass end-of-life plan rejects new Compass modules in
+// Forge apps at deploy time (CHANGE-3132), so no manifest references
+// this adapter. It remains tested library code for the payload shape.
 // The return value mirrors DataProviderResponse.build() from Atlassian's
 // Forge GraphQL toolkit, verified against the published builder source
 // on 2026-11-04. We build the plain result locally rather than taking
