@@ -19,6 +19,7 @@ const {
   AdapterHttpError,
 } = require('../src/adapters/atlassian.js');
 const { makeForgeClient } = require('../src/adapters/forge_client.js');
+const { makeBitbucketClient } = require('../apps/bitbucket/src/adapters/bitbucket_client.js');
 const {
   ChangeOp,
   OpKind,
@@ -322,7 +323,7 @@ test('forge client creates a Confluence page through the v2 route', async () => 
   });
 });
 
-test('forge client commits text with URL-encoded Bitbucket src form', async () => {
+test('bitbucket companion client commits text with URL-encoded src form', async () => {
   const seen = [];
   const fakeApi = {
     asApp: () => ({
@@ -333,7 +334,7 @@ test('forge client commits text with URL-encoded Bitbucket src form', async () =
     }),
     route: (strings, ...values) => strings.reduce((acc, s, i) => acc + s + (values[i] ?? ''), ''),
   };
-  const client = makeForgeClient(() => fakeApi);
+  const client = makeBitbucketClient(() => fakeApi);
   const out = await client.commitTextFile({
     workspaceId: 'ws', repoId: 'repo', branch: 'argus/repair', parent: 'abc123',
     path: 'bitbucket-pipelines.yml', content: 'image: node:20\n', message: 'fix(ci): repair',

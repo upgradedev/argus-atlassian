@@ -13,7 +13,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const ROOTS = ['demo', 'docs', path.join('static', 'argus-ui', 'build')];
-const FILES = ['index.html', 'app.css', 'app.js'];
+const FILES = ['index.html', 'app.css', 'app.js', 'argus-icon.svg'];
 
 function read(root, file) {
   return fs.readFileSync(path.join(__dirname, '..', root, file), 'utf8');
@@ -24,6 +24,7 @@ test('generated HTML has no inline script or style blocks', () => {
     const html = read(root, 'index.html');
     assert.doesNotMatch(html, /<style(?:\s|>)/i, root);
     assert.doesNotMatch(html, /<script(?![^>]*\bsrc=)[^>]*>/i, root);
+    assert.match(html, /<link rel="icon" href="argus-icon\.svg"/, root);
     assert.match(html, /<link rel="stylesheet" href="app\.css">/, root);
     assert.match(html, /<script src="app\.js" defer><\/script>/, root);
     assert.match(html, /aria-live="polite"/, root);
