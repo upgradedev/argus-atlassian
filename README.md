@@ -186,7 +186,7 @@ so pretending otherwise would not deploy.
    9 scopes and zero external domains.
 4. Bitbucket companion: from `apps/bitbucket/`, run `forge register`
    once, then deploy and install it into the Bitbucket workspace. Its
-   consent shows six scopes, including repository admin because
+   consent shows three read scopes, including repository admin because
    Bitbucket requires it even to read branch restrictions.
 5. In Bitbucket workspace settings, enable Custom merge checks and mark
    Argus Socratic Canary required where you want it to block merges.

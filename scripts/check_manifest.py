@@ -73,12 +73,9 @@ REQUIRED_SCOPES = {
     "write:page:confluence",
 }
 COMPANION_REQUIRED_SCOPES = {
-    "storage:app",
     "admin:repository:bitbucket",  # GET branch restrictions needs it
     "read:pullrequest:bitbucket",
     "read:repository:bitbucket",
-    "write:pullrequest:bitbucket",
-    "write:repository:bitbucket",
 }
 FUNCTION_KEY_LIMIT = 23  # real Forge lint limit, run 41786704510
 BANNED = [
@@ -380,6 +377,10 @@ def check_companion(root, companion_path):
                            if not s.endswith(":bitbucket") and s != "storage:app")
     if site_scopes:
         fail(f"companion manifest declares site scopes {site_scopes}")
+    write_scopes = sorted(s for s in cscopes if s.startswith("write:"))
+    if write_scopes:
+        fail(f"companion manifest declares write scopes {write_scopes}: "
+             f"the deployed merge check is read-only")
     cmissing_scopes = COMPANION_REQUIRED_SCOPES - set(cscopes)
     if cmissing_scopes:
         fail(f"companion manifest missing scopes: {sorted(cmissing_scopes)}")
