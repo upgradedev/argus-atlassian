@@ -45,6 +45,15 @@ const governance = createGovernance({
 
 const NOT_CONNECTED = 'not-connected: @forge/api unavailable in this runtime';
 
+// Production observability without payload leakage: status words and
+// counts only, and only inside the real Forge runtime so local tests
+// stay quiet. Forge logs are the UAT evidence surface for triggers.
+function logOutcome(handler, outcome) {
+  if (typeof globalThis.__forge_fetch__ === 'function') {
+    console.info(`argus ${handler} ${outcome}`);
+  }
+}
+
 function findField(value, field, depth = 0) {
   if (depth > 3 || value === null || typeof value !== 'object') return '';
   if (typeof value[field] === 'string') return value[field];
@@ -137,8 +146,10 @@ async function onIssueEvent(...args) {
   const issueKey = issueKeyFrom(args);
   if (reader && issueKey) {
     const evidence = await reader.fetchEvidence(issueKey);
+    logOutcome('onIssueEvent', `live ${issueKey}`);
     return { status: 'live', issueKey, evidence, links: [] };
   }
+  logOutcome('onIssueEvent', 'seed-demo');
   return { status: 'seed-demo', liveEvidence: NOT_CONNECTED, links: [] };
 }
 
@@ -147,11 +158,13 @@ async function runCanaryKillTest(...args) {
   const yaml = findField(args, 'pipelineYaml');
   if (yaml) {
     const facts = extractPipelineFacts(yaml);
+    const evaluation = evaluateRules(facts);
+    logOutcome('runCanaryKillTest', `evaluated-input violations=${evaluation.violations.length}`);
     return {
       status: 'evaluated-input',
       issueKey,
       facts,
-      evaluation: evaluationSummary(evaluateRules(facts)),
+      evaluation: evaluationSummary(evaluation),
       repair: repairPipelineYaml(yaml),
       canary: seedCanary(),
     };
@@ -177,6 +190,7 @@ async function traceIncidentProvenance(...args) {
         evidence['issue.assignee'] || 'unassigned',
         evidence['issue.updated'] || '',
       ));
+      logOutcome('traceIncidentProvenance', `partial-live ${issueKey}`);
       return {
         status: 'partial-live',
         issueKey,
@@ -226,6 +240,7 @@ async function proposeTypedChange(...args) {
       ruleId,
       proposedBy: findField(args, 'proposedBy') || findField(args, 'accountId'),
     });
+    logOutcome('proposeTypedChange', `${proposal.changeId}`);
     return {
       status: planStore.mode === 'forge-kvs' ? 'proposal-stored' : 'proposal-only',
       stored: true,
@@ -248,7 +263,7 @@ async function escalateStandbyResponder(...args) {
   // Governed write. Governance verifies the human digest against the
   // stored Typed Change IR before the writer can run. In Forge the store
   // is KVS; in local tests it is an ephemeral Map and results name that.
-  return governance.approveAndEscalate({
+  const result = await governance.approveAndEscalate({
     issueKey: issueKeyFrom(args),
     changeId: findField(args, 'changeId'),
     approvalDigest: findField(args, 'approvalDigest'),
@@ -257,6 +272,8 @@ async function escalateStandbyResponder(...args) {
     elapsedSeconds: Number(findValue(args, 'elapsedSeconds') ?? 0),
     approvedBy: findField(args, 'approvedBy') || findField(args, 'accountId'),
   });
+  logOutcome('escalateStandbyResponder', `${result.status} executed=${result.executed === true}`);
+  return result;
 }
 
 exports.resolver = makeResolverHandler({

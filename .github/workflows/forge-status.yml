@@ -1,0 +1,68 @@
+name: Forge production status (manual, read-only)
+
+# Read-only production evidence: installations and recent logs for
+# both Forge apps. It deploys nothing and installs nothing.
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Forge environment
+        required: true
+        default: production
+        type: choice
+        options:
+          - development
+          - staging
+          - production
+      since:
+        description: Log window accepted by forge logs (for example 2d)
+        required: true
+        default: 2d
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  status:
+    runs-on: ubuntu-latest
+    env:
+      FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
+      FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
+      FORGE_ENVIRONMENT: ${{ inputs.environment }}
+      LOG_SINCE: ${{ inputs.since }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Install Forge CLI and authenticate
+        run: |
+          npm install --global @forge/cli@latest
+          forge settings set usage-analytics false
+          forge whoami >/dev/null
+
+      - name: Site app installations
+        run: |
+          echo '== site app installations =='
+          forge install list --json
+
+      - name: Site app logs
+        run: |
+          echo '== site app logs =='
+          forge logs --environment "$FORGE_ENVIRONMENT" --since "$LOG_SINCE" --limit 100 --grouped || true
+
+      - name: Bitbucket companion installations
+        working-directory: apps/bitbucket
+        run: |
+          echo '== companion installations =='
+          forge install list --json
+
+      - name: Bitbucket companion logs
+        working-directory: apps/bitbucket
+        run: |
+          echo '== companion logs =='
+          forge logs --environment "$FORGE_ENVIRONMENT" --since "$LOG_SINCE" --limit 100 --grouped || true
