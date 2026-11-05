@@ -19,10 +19,14 @@ Checks:
   3. Wiring resolves: every action -> function, every function handler ->
      an export in src/<file>.js, every UI resource -> resources + disk path,
      every module key unique.
-  4. Surfaces exist: JSM/Jira panels, Bitbucket merge check + PR panel,
-     Compass component page + data provider, Confluence space page, trigger.
-  5. Write gates: escalate-standby-responder and open-verified-repair-pr
-     both require approvalDigest against a stored plan.
+  4. Surfaces exist: site app has JSM/Jira panels, Compass component
+     page + data provider (as an array), Confluence space page (with a
+     route), and trigger; the Bitbucket merge check + PR panel live in
+     the companion manifest.bitbucket.yml because Forge rejects mixing
+     Bitbucket workspace scopes with Jira site scopes.
+  5. Write gate: escalate-standby-responder requires approvalDigest
+     against a stored plan. Function keys stay within the Forge limit
+     of 23 characters.
   6. Clean room: zero em dashes, zero banned words or names.
   7. app.id: reported USER-GATED when absent (never a silent pass), format
      checked when present. Atlassian assigns it via `forge register`.
@@ -50,8 +54,6 @@ EXPECTED_SKILL_KEY = "argus-socratic-canary-skill"
 EXPECTED_SURFACES = {
     "jira:issuePanel",
     "jiraServiceManagement:queuePage",
-    "bitbucket:mergeCheck",
-    "bitbucket:repoPullRequestOverviewPanel",
     "compass:componentPage",
     "compass:dataProvider",
     "confluence:spacePage",
@@ -62,16 +64,27 @@ EXPECTED_SURFACES = {
     "action",
     "function",
 }
+COMPANION_SURFACES = {
+    "bitbucket:mergeCheck",
+    "bitbucket:repoPullRequestOverviewPanel",
+    "function",
+}
 REQUIRED_SCOPES = {
     "storage:app",
-    "read:pullrequest:bitbucket",  # required by bitbucket:mergeCheck
-    "write:repository:bitbucket",  # verified repair commits
-    "write:pullrequest:bitbucket",  # verified repair pull requests
     "read:servicedesk-request",
     "write:event:compass",
     "write:metric:compass",
     "write:page:confluence",
 }
+COMPANION_REQUIRED_SCOPES = {
+    "storage:app",
+    "admin:repository:bitbucket",  # GET branch restrictions needs it
+    "read:pullrequest:bitbucket",
+    "read:repository:bitbucket",
+    "write:pullrequest:bitbucket",
+    "write:repository:bitbucket",
+}
+FUNCTION_KEY_LIMIT = 23  # real Forge lint limit, run 41786704510
 BANNED = [
     "compliant", "conformity",  # STANDARDS.md B4
     "hedno", "deddie", "reflective", "eurosos",  # employer/customer names never ship
@@ -218,8 +231,21 @@ def main():
             fail(f"action {key} references missing function {fn}")
         if "endpoint" in action:
             fail(f"action {key} uses a remote endpoint: egress")
+    for ref_kind, ref_entries in modules.items():
+        for entry in entries(modules, ref_kind):
+            if isinstance(entry, dict) and entry.get("function") and \
+                    entry["function"] not in {f["key"] for f in entries(modules, "function")}:
+                fail(f"{ref_kind} {entry.get('key')} references missing "
+                     f"function {entry['function']}")
+            callback = entry.get("callback") if isinstance(entry, dict) else None
+            if isinstance(callback, dict) and callback.get("function") and \
+                    callback["function"] not in {f["key"] for f in entries(modules, "function")}:
+                fail(f"{ref_kind} {entry.get('key')} callback references "
+                     f"missing function {callback['function']}")
     handler_exports = 0
     for key, fn in functions.items():
+        if len(key) > FUNCTION_KEY_LIMIT:
+            fail(f"function key {key} exceeds {FUNCTION_KEY_LIMIT} characters")
         handler = fn.get("handler", "")
         file_part, _, export = handler.partition(".")
         src_file = root / "src" / f"{file_part}.js"
@@ -258,20 +284,35 @@ def main():
     if missing:
         fail(f"missing module surfaces: {sorted(missing)}")
     else:
-        ok(f"surfaces: all {len(EXPECTED_SURFACES)} module types present "
-           f"(JSM, Jira, Bitbucket, Compass, Confluence, trigger, Rovo)")
-    merge = entries(modules, "bitbucket:mergeCheck")
-    if merge and not ({"on-code-pushed", "on-merge"} <= set(merge[0].get("triggers") or [])):
-        fail("merge check must trigger on-code-pushed and on-merge")
+        ok(f"surfaces: all {len(EXPECTED_SURFACES)} site module types present "
+           f"(JSM, Jira, Compass, Confluence, trigger, Rovo)")
+    for panel in entries(modules, "jira:issuePanel"):
+        if not panel.get("icon"):
+            fail(f"jira:issuePanel {panel.get('key')} is missing the required icon")
+        elif str(panel["icon"]).startswith(("http://", "https://")):
+            fail(f"jira:issuePanel {panel.get('key')} icon is an external URL")
+    if not isinstance(modules.get("compass:dataProvider"), list):
+        fail("compass:dataProvider must be an array of definitions")
+    for page in entries(modules, "confluence:spacePage"):
+        if not page.get("route"):
+            fail(f"confluence:spacePage {page.get('key')} is missing the required route")
 
     # 5. Scopes + write gate -------------------------------------------------
     if len(scopes) != len(set(scopes)):
         fail("duplicate scopes")
+    bitbucket_scopes = sorted(s for s in scopes if s.endswith(":bitbucket"))
+    if bitbucket_scopes:
+        fail(f"site manifest declares Bitbucket workspace scopes "
+             f"{bitbucket_scopes}: Forge rejects mixing them with site scopes")
     missing_scopes = REQUIRED_SCOPES - set(scopes)
     if missing_scopes:
         fail(f"missing required scopes: {sorted(missing_scopes)}")
-    else:
-        ok(f"scopes: {len(scopes)} declared, required subset present")
+    elif not bitbucket_scopes:
+        ok(f"scopes: {len(scopes)} declared, required subset present, "
+           f"zero Bitbucket workspace scopes")
+    site_client = root / "src" / "adapters" / "forge_client.js"
+    if site_client.exists() and "requestBitbucket" in site_client.read_text(encoding="utf-8"):
+        fail("site forge_client.js calls requestBitbucket")
     escalate = actions.get("escalate-standby-responder") or {}
     escalate_inputs = escalate.get("inputs") or {}
     digest = escalate_inputs.get("approvalDigest") or {}
@@ -282,15 +323,9 @@ def main():
     else:
         ok("write gate: escalate-standby-responder requires approvalDigest "
            "and declares stored-plan execution inputs")
-    repair = actions.get("open-verified-repair-pr") or {}
-    repair_inputs = repair.get("inputs") or {}
-    repair_digest = repair_inputs.get("approvalDigest") or {}
-    if repair_digest.get("required") is not True:
-        fail("open-verified-repair-pr does not require approvalDigest input")
-    elif not {"workspace", "repository", "pipelineYaml"} <= set(repair_inputs):
-        fail("open-verified-repair-pr is missing repository or dry-run inputs")
-    else:
-        ok("write gate: open-verified-repair-pr requires approvalDigest")
+    if "open-verified-repair-pr" in actions:
+        fail("site app still exposes open-verified-repair-pr: Bitbucket "
+             "writes belong to the companion app")
 
     # 6. Clean room -------------------------------------------------------------
     if "\u2014" in raw:
@@ -313,7 +348,67 @@ def main():
     if runtime != "nodejs24.x":
         fail(f"app.runtime.name is {runtime!r}, expected nodejs24.x (verified 2026-11-03)")
 
+    # 8. Bitbucket companion manifest -----------------------------------------
+    companion_path = root / "manifest.bitbucket.yml"
+    if mpath.name == "manifest.yml":
+        check_companion(root, companion_path)
+
     return finish()
+
+
+def check_companion(root, companion_path):
+    if not companion_path.exists():
+        fail("manifest.bitbucket.yml missing: Bitbucket surfaces have no home")
+        return
+    craw = companion_path.read_text(encoding="utf-8")
+    cdoc = yaml.safe_load(craw) or {}
+    cmodules = cdoc.get("modules") or {}
+    cpermissions = cdoc.get("permissions") or {}
+    cscopes = cpermissions.get("scopes") or []
+    if "external" in cpermissions or any(
+            top in cdoc for top in ("remotes", "providers", "endpoint", "connectModules")):
+        fail("companion manifest declares an egress surface")
+    cmissing = COMPANION_SURFACES - set(cmodules)
+    if cmissing:
+        fail(f"companion manifest missing surfaces: {sorted(cmissing)}")
+    merge = entries(cmodules, "bitbucket:mergeCheck")
+    if merge and not ({"on-code-pushed", "on-merge"} <= set(merge[0].get("triggers") or [])):
+        fail("companion merge check must trigger on-code-pushed and on-merge")
+    site_scopes = sorted(s for s in cscopes
+                           if not s.endswith(":bitbucket") and s != "storage:app")
+    if site_scopes:
+        fail(f"companion manifest declares site scopes {site_scopes}")
+    cmissing_scopes = COMPANION_REQUIRED_SCOPES - set(cscopes)
+    if cmissing_scopes:
+        fail(f"companion manifest missing scopes: {sorted(cmissing_scopes)}")
+    cfunctions = {f["key"]: f for f in entries(cmodules, "function")}
+    for key, fn in cfunctions.items():
+        if len(key) > FUNCTION_KEY_LIMIT:
+            fail(f"companion function key {key} exceeds {FUNCTION_KEY_LIMIT} characters")
+        file_part, _, export = (fn.get("handler") or "").partition(".")
+        src_file = root / "src" / f"{file_part}.js"
+        if not src_file.exists() or not re.search(
+                rf"exports\.{re.escape(export)}\b",
+                src_file.read_text(encoding="utf-8")):
+            fail(f"companion function {key}: handler {fn.get('handler')} does not resolve")
+    for entry in merge:
+        if entry.get("function") not in cfunctions:
+            fail("companion merge check references a missing function")
+    bb_client = root / "src" / "adapters" / "bitbucket_client.js"
+    if bb_client.exists():
+        bb_text = bb_client.read_text(encoding="utf-8")
+        if "requestJira" in bb_text or "requestConfluence" in bb_text:
+            fail("bitbucket_client.js calls a site product API")
+    if "\u2014" in craw or any(word in craw.lower() for word in BANNED):
+        fail("companion manifest breaks the clean-room rule")
+    capp_id = (cdoc.get("app") or {}).get("id")
+    if not capp_id:
+        gated.append("companion app.id absent: register the Bitbucket "
+                     "companion app before it can deploy.")
+    elif not re.fullmatch(r"ari:cloud:ecosystem::app/[0-9a-f-]{36}", capp_id):
+        fail(f"companion app.id has the wrong shape: {capp_id}")
+    ok(f"companion: {len(cfunctions)} functions, {len(cscopes)} workspace "
+       f"scopes, merge check and PR panel wired")
 
 
 def finish():

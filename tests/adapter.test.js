@@ -12,6 +12,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const adapter = require('../src/index.js');
+const bitbucketAdapter = require('../src/index-bitbucket.js');
 
 test('seed canary separates fake-green from clean and is labelled synthetic', async () => {
   const out = await adapter.runCanaryKillTest({ issueKey: 'OPS-1' });
@@ -137,7 +138,7 @@ test('resolver dispatch evaluates pasted YAML through the invoke protocol', asyn
 });
 
 test('merge check returns exactly the documented success and message fields', async () => {
-  const out = await adapter.socraticCanaryMergeCheck({
+  const out = await bitbucketAdapter.canaryMergeCheck({
     workspace: { uuid: '{ws}' },
     repository: { uuid: '{repo}' },
     pullrequest: { id: 42 },

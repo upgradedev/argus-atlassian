@@ -1,0 +1,56 @@
+# Argus Bitbucket companion app.
+#
+# Forge cannot combine Bitbucket workspace scopes with Jira site scopes
+# in one installable app. The site app in manifest.yml owns JSM, Jira,
+# Compass, Confluence, and Rovo. This companion owns only the Bitbucket
+# merge check and PR evidence panel. Both call the same deterministic
+# domain core in src/argus/.
+#
+# This file has no app.id yet. Its companion registration workflow must
+# copy it to manifest.yml in the runner, register a second Forge app,
+# and return the assigned id here through a reviewed pull request.
+# Zero Egress is declared by omission exactly as in the site manifest.
+
+app:
+  runtime:
+    name: nodejs24.x
+
+modules:
+  bitbucket:mergeCheck:
+    - key: argus-socratic-canary-merge-check
+      function: canaryMergeCheck
+      name: Argus Socratic Canary
+      description: >-
+        Runs the Elenchos Socratic Kill-Test against this pull request. A
+        fake-green pipeline fails the check; a clean pipeline passes it.
+      triggers:
+        - on-code-pushed
+        - on-merge
+
+  bitbucket:repoPullRequestOverviewPanel:
+    - key: argus-pr-canary-panel
+      title: Argus Socratic Canary
+      resource: argus-ui
+      resolver:
+        function: resolver
+
+  function:
+    - key: resolver
+      handler: index-bitbucket.resolver
+    - key: canaryMergeCheck
+      handler: index-bitbucket.canaryMergeCheck
+
+resources:
+  - key: argus-ui
+    path: static/argus-ui/build
+
+permissions:
+  scopes:
+    - storage:app
+    # Bitbucket requires the admin scope even for GET branch
+    # restrictions, which supplies the r13 enforcement fact.
+    - admin:repository:bitbucket
+    - read:pullrequest:bitbucket
+    - read:repository:bitbucket
+    - write:pullrequest:bitbucket
+    - write:repository:bitbucket

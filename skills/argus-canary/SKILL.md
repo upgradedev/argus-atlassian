@@ -3,7 +3,7 @@ name: argus-canary
 description: Run the Argus Socratic Canary Kill-Test for a JSM incident or Jira issue, trace the incident to the Bitbucket pipeline that caused it, propose a Typed Change IR repair, and fail over to the standby on-call responder under a human approval digest. Use when a pipeline looks green but an incident followed a release, or when someone asks whether a CI gate can be trusted.
 license: MIT
 compatibility: Requires the Argus Forge app installed on the Atlassian site, with its Rovo actions available. External MCP use needs a site admin to enable Argus tools for the app installation first.
-allowed-tools: run-canary-kill-test trace-incident-provenance propose-typed-change escalate-standby-responder open-verified-repair-pr
+allowed-tools: run-canary-kill-test trace-incident-provenance propose-typed-change escalate-standby-responder
 ---
 
 # Argus Socratic Canary
@@ -86,8 +86,8 @@ approval, r13 required merge checks not enforced, r14 secret material
 in code, r15 no lockfile, r16 install not frozen, r17 cache key ignores
 the lockfile, r18 unpinned image, r19 no job timeout, r20 forced
 success status. Each rule earned its id by separating its violating
-fixture from the clean state. The machine re-proves that with
-`node scripts/run_killtest_benchmark.js` in the repo.
+fixture from the clean state. The repository benchmark re-proves that
+separation for every rule.
 
 ### 3. Propose, do not apply: `propose-typed-change`
 
@@ -136,21 +136,18 @@ Outcomes, in the only orders that are safe.
 - Do not call this action twice with the same digest. An executed plan
   refuses replay.
 
-### 5. Open the repair PR only after the same human approval
+### 5. Hand the verified repair to Bitbucket
 
-Inputs: `issueKey`, `approvalDigest`, optional `changeId`, `workspace`,
-`repository`, `sourceBranch`, `pipelinePath`, and `pipelineYaml` for a
-dry-run preview.
+The site app never opens a Bitbucket pull request. Forge keeps
+Bitbucket workspace scopes separate from Jira site scopes, so the
+Bitbucket companion app owns the merge check and PR surface.
 
-- `status: repair-pr-open` with a pull request id or URL means the
-  stored digest matched, the deterministic YAML rewrite was re-run
-  through the rules, a repair branch was committed, and the PR exists.
-- `status: verified-dry-run` may include repaired YAML. Show it as a
-  patch for review. It is not a branch and not a pull request.
-- A rewrite that does not clear the stored plan's own rule is refused.
-  Do not retry by hand-editing the claim.
-- Opening the PR and assigning the standby responder are separate
-  replay-guarded executions of the same approved stored plan.
+- Present only repaired YAML that `run-canary-kill-test` returned after
+  re-evaluation. It is a patch for human review, not an applied change.
+- A rewrite that does not clear its own rule is not a verified repair.
+  Name the still-failing rule instead of retrying by hand.
+- The companion merge check is the Bitbucket-side verdict. Do not claim
+  a pull request exists unless a Bitbucket surface returned its id.
 
 ## Error handling
 

@@ -35,11 +35,7 @@ const {
 } = require('./adapters/compass.js');
 const { makeForgePlanStore, InMemoryPlanStore } = require('./adapters/plan_store.js');
 const { createGovernance } = require('./governance.js');
-const {
-  parseMergeCheckEvent,
-  parseIssueKey,
-  mergeCheckMessage,
-} = require('./forge_events.js');
+const { parseIssueKey } = require('./forge_events.js');
 const { makeResolverHandler } = require('./resolver.js');
 
 const forgeClient = makeForgeClient();
@@ -112,21 +108,6 @@ function evaluationSummary(evaluation) {
   };
 }
 
-async function liveEvaluation(args) {
-  // Returns null when no live route exists, so callers can fall through to
-  // evaluated-input, then seed, in that order. Never fabricates ids.
-  if (!reader) return null;
-  const event = parseMergeCheckEvent(...args);
-  const workspaceId = event?.workspaceId || findField(args, 'workspaceId');
-  const repoId = event?.repoId || findField(args, 'repoId') || findField(args, 'repositoryUuid');
-  const pullRequestId = event?.pullRequestId || findField(args, 'pullRequestId');
-  if (!workspaceId || !repoId || !pullRequestId) return null;
-  const pr = await forgeClient.getPullRequest(workspaceId, repoId, pullRequestId);
-  const commit = pr?.source?.commit?.hash;
-  if (!commit) return null;
-  return reader.fetchPipelineEvaluation(workspaceId, repoId, commit);
-}
-
 async function getArgusStatus() {
   const validation = validateAllRules();
   return {
@@ -157,34 +138,10 @@ async function getProposalStatus(req = {}) {
   return governance.getProposal({ issueKey, changeId });
 }
 
-async function socraticCanaryMergeCheck(...args) {
-  // Bitbucket documents exactly { success, message } for this function.
-  // Returning our richer action shape here was a UAT finding. The rich
-  // evaluation stays available through the action and resolver paths.
-  try {
-    const live = await liveEvaluation(args);
-    if (live) {
-      return {
-        success: live.evaluation.clean,
-        message: mergeCheckMessage(live.evaluation),
-      };
-    }
-  } catch (err) {
-    return {
-      success: false,
-      message: `Argus could not evaluate this pull request: ${err.message}`.slice(0, 240),
-    };
-  }
-  return {
-    success: false,
-    message: 'Argus could not evaluate this pull request in this runtime.',
-  };
-}
-
-const compassDataProvider = createCompassDataProvider({
-  client: forgeClient,
-  reader,
-});
+// A Compass site app cannot call Bitbucket APIs. The provider registers
+// the two Argus metric definitions for a repository link; live values
+// arrive from explicit Argus evaluations, never invented here.
+const compassDataProvider = createCompassDataProvider();
 
 async function compassDataProviderHandler(...args) {
   const request = args.find(
@@ -222,21 +179,6 @@ async function onIssueEvent(...args) {
 async function runCanaryKillTest(...args) {
   const issueKey = issueKeyFrom(args);
   const yaml = findField(args, 'pipelineYaml');
-  try {
-    const live = await liveEvaluation(args);
-    if (live) {
-      return {
-        status: 'live', issueKey,
-        evaluation: evaluationSummary(live.evaluation),
-        canary: seedCanary(),
-      };
-    }
-  } catch (err) {
-    return {
-      status: 'seed-demo', issueKey, liveEvidence: NOT_CONNECTED,
-      liveError: err.message, canary: seedCanary(),
-    };
-  }
   if (yaml) {
     const facts = extractPipelineFacts(yaml);
     return {
@@ -351,26 +293,11 @@ async function escalateStandbyResponder(...args) {
   });
 }
 
-async function openVerifiedRepairPr(...args) {
-  return governance.approveAndOpenRepairPr({
-    issueKey: issueKeyFrom(args),
-    changeId: findField(args, 'changeId'),
-    approvalDigest: findField(args, 'approvalDigest'),
-    approvedBy: findField(args, 'approvedBy') || findField(args, 'accountId'),
-    workspace: findField(args, 'workspace'),
-    repository: findField(args, 'repository'),
-    sourceBranch: findField(args, 'sourceBranch'),
-    pipelinePath: findField(args, 'pipelinePath') || 'bitbucket-pipelines.yml',
-    pipelineYaml: findField(args, 'pipelineYaml'),
-  });
-}
-
 exports.resolver = makeResolverHandler({
   getArgusStatus,
   evaluatePipeline,
   getProposalStatus,
 });
-exports.socraticCanaryMergeCheck = socraticCanaryMergeCheck;
 exports.compassDataProvider = compassDataProviderHandler;
 exports.compassDataProviderCallback = compassCallback;
 exports.onIssueEvent = onIssueEvent;
@@ -378,4 +305,3 @@ exports.runCanaryKillTest = runCanaryKillTest;
 exports.traceIncidentProvenance = traceIncidentProvenance;
 exports.proposeTypedChange = proposeTypedChange;
 exports.escalateStandbyResponder = escalateStandbyResponder;
-exports.openVerifiedRepairPr = openVerifiedRepairPr;

@@ -46,24 +46,9 @@ modules:
       resolver:
         function: resolver
 
-  # --- Bitbucket PR Socratic Canary checks ---------------------------------
-  bitbucket:mergeCheck:
-    - key: argus-socratic-canary-merge-check
-      function: socraticCanaryMergeCheck
-      name: Argus Socratic Canary
-      description: >-
-        Runs the Elenchos Socratic Kill-Test against this pull request. A
-        fake-green pipeline fails the check; a clean pipeline passes it.
-      triggers:
-        - on-code-pushed
-        - on-merge
-
-  bitbucket:repoPullRequestOverviewPanel:
-    - key: argus-pr-canary-panel
-      title: Argus Socratic Canary
-      resource: argus-ui
-      resolver:
-        function: resolver
+  # Bitbucket merge checks live in manifest.bitbucket.yml. Forge rejects
+  # Bitbucket workspace scopes in this site app, so the companion app is
+  # a separate installable over the same src/argus/ domain core.
 
   # --- Compass scorecards ----------------------------------------------------
   compass:componentPage:
@@ -80,7 +65,7 @@ modules:
     - key: argus-compass-data-provider
       function: compassDataProvider
       callback:
-        function: compassDataProviderCallback
+        function: compassCallback
       linkTypes:
         - repository
       domains:
@@ -137,7 +122,6 @@ modules:
         - trace-incident-provenance
         - propose-typed-change
         - escalate-standby-responder
-        - open-verified-repair-pr
       skills:
         - argus-socratic-canary-skill
 
@@ -152,7 +136,6 @@ modules:
         - trace-incident-provenance
         - propose-typed-change
         - escalate-standby-responder
-        - open-verified-repair-pr
 
   # Same skill directory serves external coding agents (Agent Skills open
   # spec, TRAPS.md T2) and the Forge Rovo Agent above (skills property).
@@ -169,7 +152,6 @@ modules:
           - trace-incident-provenance
           - propose-typed-change
           - escalate-standby-responder
-          - open-verified-repair-pr
 
   action:
     - key: run-canary-kill-test
@@ -228,7 +210,7 @@ modules:
           description: The failing Elenchos rule id, r01 through r20
     - key: escalate-standby-responder
       name: Escalate to standby responder
-      function: escalateStandbyResponder
+      function: escalateStandby
       actionVerb: UPDATE
       description: >-
         Fail over this JSM incident to the standby on-call responder. This is
@@ -263,67 +245,15 @@ modules:
           required: false
           description: Seconds since the first page, used by the standby roster when one is supplied.
 
-    - key: open-verified-repair-pr
-      name: Open verified repair PR
-      function: openVerifiedRepairPr
-      actionVerb: CREATE
-      description: >-
-        Open a Bitbucket repair pull request from a stored Typed Change IR.
-        Runs only when approvalDigest matches that stored plan and the
-        deterministic rewrite re-verifies against the Elenchos rules.
-      inputs:
-        issueKey:
-          title: Issue Key
-          type: string
-          required: true
-          description: The JSM incident or Jira issue key, for example OPS-123
-        approvalDigest:
-          title: Approval Digest
-          type: string
-          required: true
-          description: Lowercase hex SHA-256 digest of the exact stored plan a human approved.
-        changeId:
-          title: Change Id
-          type: string
-          required: false
-          description: Stored proposal id. Omit it to use the latest proposal for this issue.
-        workspace:
-          title: Workspace
-          type: string
-          required: false
-          description: Shared Bitbucket workspace slug or UUID.
-        repository:
-          title: Repository
-          type: string
-          required: false
-          description: Bitbucket repository slug or UUID.
-        sourceBranch:
-          title: Source Branch
-          type: string
-          required: false
-          description: Destination branch to repair from. Defaults to the repository main branch.
-        pipelinePath:
-          title: Pipeline Path
-          type: string
-          required: false
-          description: Pipeline file path. Defaults to bitbucket-pipelines.yml.
-        pipelineYaml:
-          title: Pipeline YAML
-          type: string
-          required: false
-          description: Optional YAML used only for a verified dry-run repair preview.
-
   # Every handler below lives in src/index.js, the thin Forge adapter. The
   # adapters call the pure domain core in src/argus/, which imports no Forge,
   # Atlassian, or LLM SDK (AGENTS.md, STANDARDS.md A5).
   function:
     - key: resolver
       handler: index.resolver
-    - key: socraticCanaryMergeCheck
-      handler: index.socraticCanaryMergeCheck
     - key: compassDataProvider
       handler: index.compassDataProvider
-    - key: compassDataProviderCallback
+    - key: compassCallback
       handler: index.compassDataProviderCallback
     - key: onIssueEvent
       handler: index.onIssueEvent
@@ -333,20 +263,19 @@ modules:
       handler: index.traceIncidentProvenance
     - key: proposeTypedChange
       handler: index.proposeTypedChange
-    - key: escalateStandbyResponder
+    - key: escalateStandby
       handler: index.escalateStandbyResponder
-    - key: openVerifiedRepairPr
-      handler: index.openVerifiedRepairPr
 
 resources:
   - key: argus-ui
     path: static/argus-ui/build
 
 permissions:
-  # Scope strings verified 2026-11-03 against the Forge scope references for
-  # Forge, Jira, JSM, Bitbucket, Compass, and Confluence. Forge grants one
-  # union scope set per app, so the Reader / Evaluator / Writer split
-  # (AGENTS.md A7) is enforced inside src/argus/, not by separate manifests.
+  # Scope strings verified 2026-11-03 against the Forge scope references
+  # for Forge, Jira, JSM, Compass, and Confluence. Bitbucket workspace
+  # scopes are declared only in manifest.bitbucket.yml: Forge rejects
+  # mixing them with these site scopes. The Reader / Evaluator / Writer
+  # split (AGENTS.md A7) is enforced inside src/argus/.
   scopes:
     # Forge platform. storage:app is the data residency enabled storage the
     # Runs on Atlassian eligibility page requires.
@@ -358,13 +287,6 @@ permissions:
     - read:jira-user
     - read:servicedesk-request
     - write:servicedesk-request
-    # Bitbucket (read:pullrequest:bitbucket is required by bitbucket:mergeCheck;
-    # admin is required by Atlassian just to GET branch restrictions)
-    - admin:repository:bitbucket
-    - read:pullrequest:bitbucket
-    - write:pullrequest:bitbucket
-    - read:repository:bitbucket
-    - write:repository:bitbucket
     # Compass (component page plus scorecard events and metrics)
     - read:component:compass
     - write:component:compass

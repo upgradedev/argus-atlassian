@@ -3,7 +3,7 @@
 [![CI](https://github.com/upgradedev/argus-atlassian/actions/workflows/ci.yml/badge.svg)](https://github.com/upgradedev/argus-atlassian/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/github/license/upgradedev/argus-atlassian)](LICENSE)
 
-Argus links JSM incidents to Bitbucket pipelines via Teamwork Graph, fires a synthetic canary to expose fake-green gates, and opens the verified repair PR.
+Argus links JSM incidents to linked Bitbucket work, fires a synthetic canary to expose fake-green gates, and returns a re-verified repair patch.
 
 For Dimitris Lagos, SRE and Release Lead on JSM incident standby at a fintech engineering team. His P1 opens in Jira Service Management minutes after a Bitbucket Pipeline and a Jira Release showed all green. The green badge was the lie. Argus reads the exit codes under the badge.
 
@@ -31,10 +31,10 @@ judge it in your browser. Nothing leaves the page.
 |---|---|
 | Domain core (canary, change IR, evidence, provenance, receipts, standby, shield, rules r01-r20) | Implemented and tested. `node --test` gives 99 pass, 0 fail |
 | Kill-test benchmark | Implemented. `node scripts/run_killtest_benchmark.js` gives rules accepted 20/20 on Argus synthetic fixtures. It is a fixture separation result, not a field measurement |
-| Forge manifest | Written and gate-checked. Zero egress, Rovo agent plus MCP plus skill. `app.id` arrives from the one-time Forge register workflow |
+| Forge apps | Two installables over one core: the registered site app (`manifest.yml`) owns JSM, Jira, Compass, Confluence, and Rovo; the Bitbucket companion (`manifest.bitbucket.yml`) owns the merge check. Forge rejects mixing Bitbucket workspace scopes with site scopes |
 | Live Atlassian reads | Reader adapter implemented behind an injected client, including issue links and remote links labelled association rather than causality. Live exercise is part of the deployment UAT below |
 | Governed writes | Typed Change IR proposals persist in Forge KVS. Standby assignment executes only when the human digest matches the stored plan, seals a receipt, and refuses replay |
-| Repair PR opening | Implemented behind the same stored-plan digest. Argus rewrites the pipeline, re-evaluates all rules, refuses unless the stored rule clears, then commits a branch and opens the PR |
+| Verified repair | Argus rewrites supplied pipeline YAML and re-evaluates all rules before returning it as a patch. The Bitbucket companion merge check blocks a fake-green PR; automated repair-PR creation is adapter-tested but not yet exposed as a companion function |
 | Teamwork Graph connector ingestion | Not implemented. The documented connector shape pairs with external fetch and an auth provider, which would break zero egress, so Argus walks issue and pull request links instead. Recorded as an open decision, not a quiet gap |
 | Anonymous demo | Live as a static page (link above). It evaluates YAML you paste. It never connects to your site |
 
@@ -97,9 +97,9 @@ flowchart LR
   BB --> PRPanel[PR overview panel]
   Compass[Compass component] --> CPage[Scorecard evidence page]
   Conf[Confluence space] --> PIR[Post-incident page]
-  Panel --> Adapter[src/index.js Forge adapter]
-  Merge --> Adapter
-  PRPanel --> Adapter
+  Panel --> Adapter[src/index.js site adapter]
+  Merge --> BBAdapter[src/index-bitbucket.js companion adapter]
+  PRPanel --> BBAdapter
   CPage --> Adapter
   PIR --> Adapter
   Agent[rovo:agent Argus Incident Governor] --> Actions[action modules]
@@ -107,6 +107,7 @@ flowchart LR
   Skill[rovo:skill argus-socratic-canary-skill] --> Agent
   Actions --> Adapter
   Adapter --> Core[src/argus pure domain core]
+  BBAdapter --> Core
   Adapter --> Atl[src/adapters Atlassian reader and writer]
   Core -. no Forge or Atlassian SDK .-> Atl
 ```
@@ -125,8 +126,8 @@ sequenceDiagram
   Argus->>Core: propose Typed Change IR
   Core-->>Human: plan with SHA-256 digest, three role lenses
   Human-->>Argus: approve exact digest
-  Argus->>Core: verify digest before write
-  Core-->>BB: writer executes only on match
+  Argus->>Core: verify digest before JSM write
+  BB->>Argus: companion merge check verdict on the PR
 ```
 
 ## Quickstart
@@ -155,8 +156,9 @@ pip install pyyaml
 python scripts/check_manifest.py
 ```
 
-Expected: eight `PASS` lines and one `USER-GATED` line for `app.id` (see
-below). Exit code 0. The gated line is a named manual step, never a pass.
+Expected: nine `PASS` lines and one `USER-GATED` line for the Bitbucket
+companion `app.id`. Exit code 0. The gated line is a named manual step,
+never a pass.
 
 To rebuild the demo page after a domain change:
 
@@ -169,17 +171,25 @@ source, so the browser and the panel cannot drift.
 
 ## Install on your Atlassian site
 
+Argus ships as two Forge installables over one codebase. Forge does not
+allow Bitbucket workspace scopes and Jira site scopes in the same app,
+so pretending otherwise would not deploy.
+
 1. Create a free developer site at
    [go.atlassian.com/cloud-dev](https://go.atlassian.com/cloud-dev) with
-   Jira, Jira Service Management, Confluence, and a Bitbucket workspace.
+   Jira, Jira Service Management, and Confluence, plus a Bitbucket
+   workspace for the companion app.
 2. Install the Forge CLI and log in: `npm install -g @forge/cli`,
    then `forge login`.
-3. From this directory, register the app once: `forge register`.
-   Atlassian writes `app.id` into `manifest.yml`. We never ship an
-   invented app id.
-4. `forge deploy`, then `forge install` into Jira, JSM, Bitbucket,
-   Compass, and Confluence on that site. Consent shows 17 scopes and
-   zero external domains.
+3. Site app: `manifest.yml` already carries the registered Argus site
+   app id. Run `forge deploy`, then `forge install` into Jira/JSM,
+   Compass, and Confluence as each product is available. Consent shows
+   13 scopes and zero external domains.
+4. Bitbucket companion: use a separate checkout, copy
+   `manifest.bitbucket.yml` over `manifest.yml`, run `forge register`
+   once, then deploy and install it into the Bitbucket workspace. Its
+   consent shows six scopes, including repository admin because
+   Bitbucket requires it even to read branch restrictions.
 5. In Bitbucket workspace settings, enable Custom merge checks and mark
    Argus Socratic Canary required where you want it to block merges.
 6. Open any JSM incident. The Argus panel runs the seed canary on an
@@ -195,10 +205,12 @@ permits analytics egress. `scripts/check_manifest.py` fails the build if
 any egress surface returns. Run it against a manifest with a `remotes:`
 block added and watch it exit 1; a gate that cannot fail is decoration.
 
-Forge grants one union scope set per app, so the Reader, Evaluator, and
-Writer split is enforced in code: the reader adapter throws on write
-attempts, and the writer runs only after the approval digest check. Both
-behaviors have tests that fail if the guard is removed.
+Within each installable, Forge grants one union scope set, so the
+Reader, Evaluator, and Writer split is also enforced in code: the
+reader adapter throws on write attempts, and the writer runs only
+after the approval digest check. Both behaviors have tests that fail
+if the guard is removed. Keeping Bitbucket scopes in a companion app
+means the JSM/Rovo app never receives repository admin rights.
 
 GDPR note: Argus reads issue, pull request, and pipeline metadata inside
 the installed Atlassian tenancy, stores nothing outside it, and has no
@@ -214,7 +226,7 @@ Every number below names its command. Re-run them; do not take our word.
 |---|---|---|
 | Core and adapter tests | `node --test` | 99 pass, 0 fail |
 | Rule separation | `node scripts/run_killtest_benchmark.js` | 20/20 accepted; badge-only check thrown out 20/20; scope is synthetic fixtures |
-| Manifest shape | `python scripts/check_manifest.py` | 0 FAIL, 1 USER-GATED (`app.id`) |
+| Manifest shape | `python scripts/check_manifest.py` | 0 FAIL, 1 USER-GATED (Bitbucket companion `app.id`) |
 | Python twin still green | `python -m unittest discover` in the sister core | 39 tests OK; shared digests pinned in this repo tests |
 
 ## Well-Architected and EU AI Act notes
@@ -239,8 +251,10 @@ EU AI Act (Regulation EU 2024/1689), by article, with the gap kept in.
 ## Repository layout
 
 ```text
-manifest.yml            Forge app: zero egress, Rovo pair plus skill
-src/index.js            Forge handlers, seed fallbacks, live routing
+manifest.yml            site Forge app: zero egress, Rovo pair plus skill
+manifest.bitbucket.yml  Bitbucket companion: merge check and PR panel
+src/index.js            site Forge handlers, seed fallbacks, live routing
+src/index-bitbucket.js  companion merge-check and PR panel handlers
 src/governance.js       stored plans, digest verification, receipts, replay guard
 src/resolver.js         @forge/resolver construction with a test fallback
 src/forge_events.js     documented Forge event parsers and merge-check replies
