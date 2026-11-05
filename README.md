@@ -33,7 +33,8 @@ judge it in your browser. Nothing leaves the page.
 | Kill-test benchmark | Implemented. `node scripts/run_killtest_benchmark.js` gives rules accepted 20/20 on Argus synthetic fixtures. It is a fixture separation result, not a field measurement |
 | Forge apps | Two installables over one core: the registered site app (`manifest.yml`) owns JSM, Jira, Confluence, and Rovo; the Bitbucket companion app root (`apps/bitbucket/`) owns the merge check. Forge rejects mixing Bitbucket workspace scopes with site scopes |
 | Compass surface | Not deployable for a new app. Atlassian's Compass end-of-life plan rejects new Compass modules at deploy time (CHANGE-3132; production deploy run 41958497031). The scorecard payload builder stays as tested library code, with no deployed Compass module or scope |
-| Live Atlassian reads | Reader adapter implemented behind an injected client, including issue links and remote links labelled association rather than causality. Live exercise is part of the deployment UAT below |
+| Production deployment | Deployed 2026-11-05. The site app is installed in Jira on the maintainer site and reported `Up-to-date` by `forge install list`; the Bitbucket companion is production-deployed with no workspace installation until a workspace is named. Confluence install was refused by Atlassian because Confluence is not activated on that site |
+| Live Atlassian reads | Exercised in production: Jira REST created and updated UAT issue `DEMO-11`, and Forge logs recorded `argus onIssueEvent live DEMO-11`. Issue and remote links stay labelled association rather than causality. Panel and Rovo browser paths still need a signed-in human pass |
 | Governed writes | Typed Change IR proposals persist in Forge KVS. Standby assignment executes only when the human digest matches the stored plan, seals a receipt, and refuses replay |
 | Verified repair | Argus rewrites supplied pipeline YAML and re-evaluates all rules before returning it as a patch. The Bitbucket companion merge check blocks a fake-green PR; automated repair-PR creation is adapter-tested but not yet exposed as a companion function |
 | Teamwork Graph connector ingestion | Not implemented. The documented connector shape pairs with external fetch and an auth provider, which would break zero egress, so Argus walks issue and pull request links instead. Recorded as an open decision, not a quiet gap |
@@ -220,11 +221,12 @@ tenancy, because no egress path exists in the manifest.
 
 Every number below names its command. Re-run them; do not take our word.
 
-| Claim | Command | Result on 2026-11-03 |
+| Claim | Command | Result on 2026-11-05 |
 |---|---|---|
 | Core and adapter tests | `node --test` | 101 pass, 0 fail |
 | Rule separation | `node scripts/run_killtest_benchmark.js` | 20/20 accepted; badge-only check thrown out 20/20; scope is synthetic fixtures |
-| Manifest shape | `python scripts/check_manifest.py` | 0 FAIL, 1 USER-GATED (Bitbucket companion `app.id`) |
+| Manifest shape | `python scripts/check_manifest.py` | 0 FAIL, 0 USER-GATED; site 9 scopes, companion 3 read scopes |
+| Production trigger | Create/update a Jira issue, then run the read-only Forge status workflow | Forge logs: `argus onIssueEvent live DEMO-11`; Jira installation `Up-to-date` |
 | Python twin still green | `python -m unittest discover` in the sister core | 39 tests OK; shared digests pinned in this repo tests |
 
 ## Well-Architected and EU AI Act notes
