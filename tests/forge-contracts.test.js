@@ -15,6 +15,8 @@ const { makeResolverHandler } = require('../src/resolver.js');
 const { makeForgePlanStore } = require('../src/adapters/plan_store.js');
 const { evaluateRules, CLEAN_STATE, violatingStateFor } = require('../src/argus/index.js');
 
+const FORGE_RUNTIME = { __forge_fetch__: async () => ({}) };
+
 test('actual Bitbucket merge-check payload parses by object, not string hunting', () => {
   const parsed = parseMergeCheckEvent({
     workspace: { uuid: '{workspace-uuid}' },
@@ -61,7 +63,11 @@ test('resolver uses new Resolver, define, and getDefinitions when the package ex
       return async (req) => defined.find(([key]) => key === req.call.functionKey)[1](req);
     }
   }
-  const handler = makeResolverHandler({ ping: async () => 'pong' }, () => FakeResolver);
+  const handler = makeResolverHandler(
+    { ping: async () => 'pong' },
+    () => FakeResolver,
+    FORGE_RUNTIME,
+  );
   assert.deepEqual(defined.map(([key]) => key), ['ping']);
   assert.equal(await handler({ call: { functionKey: 'ping' } }), 'pong');
 });
@@ -74,10 +80,25 @@ test('forge plan store unwraps named, default, and plain KVS module shapes', asy
     delete: async (key) => values.delete(key),
   };
   for (const shape of [{ kvs }, { default: { kvs } }, kvs]) {
-    const store = makeForgePlanStore(() => shape);
+    const store = makeForgePlanStore(() => shape, FORGE_RUNTIME);
     assert.ok(store);
     await store.set('x', { n: 1 });
     assert.deepEqual(await store.get('x'), { n: 1 });
   }
-  assert.equal(makeForgePlanStore(() => { throw new Error('missing'); }), null);
+  assert.equal(makeForgePlanStore(() => { throw new Error('missing'); }, FORGE_RUNTIME), null);
+});
+
+test('installed Forge packages without a Forge runtime use local fallbacks', async () => {
+  class FakeResolver {
+    define() { return this; }
+    getDefinitions() { throw new Error('real resolver must not be used'); }
+  }
+  const handler = makeResolverHandler(
+    { ping: async () => 'pong' },
+    () => FakeResolver,
+    {},
+  );
+  assert.equal(await handler({ call: { functionKey: 'ping', payload: {} }, context: {} }), 'pong');
+  const kvs = { get: async () => undefined, set: async () => {} };
+  assert.equal(makeForgePlanStore(() => ({ kvs }), {}), null);
 });

@@ -2,8 +2,10 @@
 
 // Site-app Forge runtime client behind adapters/atlassian.js.
 // Built only inside the Forge runtime: makeForgeClient() lazy-loads
-// @forge/api and returns null where it is not installed. Callers treat
-// null as not-connected and fall back to the synthetic seed.
+// @forge/api and returns null where it is not installed. Package
+// presence is not enough: after `npm ci` in CI the package exists but
+// the Forge runtime global does not, and claiming a live client there
+// would be false. Callers treat null as not-connected.
 //
 // This client is deliberately Jira and Confluence only. Forge rejects
 // a manifest that mixes Bitbucket workspace scopes with Jira site
@@ -25,7 +27,12 @@ async function unwrapJson(response, what) {
   return response.json();
 }
 
-function makeForgeClient(loader = defaultLoader) {
+function hasForgeRuntime(runtimeGlobal) {
+  return typeof runtimeGlobal?.__forge_fetch__ === 'function';
+}
+
+function makeForgeClient(loader = defaultLoader, runtimeGlobal = globalThis) {
+  if (!hasForgeRuntime(runtimeGlobal)) return null;
   let apiModule;
   try {
     apiModule = loader();
@@ -80,4 +87,4 @@ function makeForgeClient(loader = defaultLoader) {
   });
 }
 
-module.exports = { makeForgeClient };
+module.exports = { makeForgeClient, hasForgeRuntime };
