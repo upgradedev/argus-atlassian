@@ -324,28 +324,27 @@ test('forge client creates a Confluence page through the v2 route', async () => 
   });
 });
 
-test('bitbucket companion client commits text with URL-encoded src form', async () => {
+test('bitbucket companion client is read-only and reads the pipeline file', async () => {
   const seen = [];
   const fakeApi = {
     asApp: () => ({
-      requestBitbucket: async (path, options) => {
-        seen.push([path, options]);
-        return { status: 201, text: async () => '' };
+      requestBitbucket: async (path) => {
+        seen.push(path);
+        return { status: 200, text: async () => 'image: node:20\n' };
       },
     }),
     route: (strings, ...values) => strings.reduce((acc, s, i) => acc + s + (values[i] ?? ''), ''),
   };
   const client = makeBitbucketClient(() => fakeApi, FORGE_RUNTIME);
-  const out = await client.commitTextFile({
-    workspaceId: 'ws', repoId: 'repo', branch: 'argus/repair', parent: 'abc123',
-    path: 'bitbucket-pipelines.yml', content: 'image: node:20\n', message: 'fix(ci): repair',
-  });
-  assert.equal(out.status, 201);
-  assert.equal(seen[0][0], '/2.0/repositories/ws/repo/src');
-  assert.equal(seen[0][1].method, 'POST');
-  assert.match(seen[0][1].body, /branch=argus%2Frepair/);
-  assert.match(seen[0][1].body, /parents=abc123/);
-  assert.match(seen[0][1].body, /bitbucket-pipelines\.yml=image%3A\+node%3A20%0A|bitbucket-pipelines\.yml=image%3Anode/);
+  assert.deepEqual(
+    Object.keys(client).sort(),
+    ['getBranchRestrictions', 'getPullRequest', 'getRepoFileText'],
+  );
+  assert.equal(client.commitTextFile, undefined);
+  assert.equal(client.createPullRequest, undefined);
+  const yaml = await client.getRepoFileText('ws', 'repo', 'abc123', 'bitbucket-pipelines.yml');
+  assert.equal(yaml, 'image: node:20\n');
+  assert.deepEqual(seen, ['/2.0/repositories/ws/repo/src/abc123/bitbucket-pipelines.yml']);
 });
 
 test('installed Forge packages without a Forge runtime still yield no live client', () => {

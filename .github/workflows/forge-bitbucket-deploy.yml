@@ -1,0 +1,97 @@
+name: Forge Bitbucket companion deploy (manual)
+
+# Deploys the registered Bitbucket companion app and optionally
+# installs it into a Bitbucket workspace. The workspace is an explicit
+# input: it is never guessed from the Jira site.
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Forge environment
+        required: true
+        default: production
+        type: choice
+        options:
+          - development
+          - staging
+          - production
+      install:
+        description: Install into the Bitbucket workspace below
+        required: true
+        default: false
+        type: boolean
+      bitbucketWorkspace:
+        description: Bitbucket workspace slug or URL (required only to install)
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: forge-bitbucket-deploy-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    env:
+      FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
+      FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
+      FORGE_ENVIRONMENT: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Require a registered companion id and lockfiles
+        run: |
+          grep -Eq '^[[:space:]]*id:[[:space:]]*ari:cloud:ecosystem::app/' apps/bitbucket/manifest.yml
+          test -f package-lock.json
+          test -f apps/bitbucket/package-lock.json
+
+      - name: Install locked dependencies and Forge CLI
+        run: |
+          npm ci
+          npm --prefix apps/bitbucket ci
+          npm install --global @forge/cli@latest
+
+      - name: Test before deploy
+        run: |
+          node --test
+          node scripts/run_killtest_benchmark.js
+
+      - name: Authenticate and lint companion
+        working-directory: apps/bitbucket
+        run: |
+          forge settings set usage-analytics false
+          forge whoami >/dev/null
+          forge lint
+
+      - name: Deploy companion
+        working-directory: apps/bitbucket
+        run: forge deploy --environment "$FORGE_ENVIRONMENT" --non-interactive --verbose
+
+      - name: Install companion into Bitbucket workspace
+        if: inputs.install
+        working-directory: apps/bitbucket
+        run: |
+          test -n "${{ inputs.bitbucketWorkspace }}"
+          workspace="${{ inputs.bitbucketWorkspace }}"
+          case "$workspace" in
+            http://*|https://*) site="$workspace" ;;
+            bitbucket.org/*) site="$workspace" ;;
+            *) site="bitbucket.org/$workspace" ;;
+          esac
+          forge install --site "$site" --product Bitbucket \
+            --environment "$FORGE_ENVIRONMENT" \
+            --confirm-scopes --non-interactive --verbose
+
+      - name: List companion installations
+        working-directory: apps/bitbucket
+        run: forge install list --json

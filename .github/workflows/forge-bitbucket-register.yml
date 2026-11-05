@@ -1,0 +1,103 @@
+name: Forge Bitbucket companion register (manual, one-time)
+
+# Registers the second Forge app (Bitbucket companion) and pushes the
+# assigned app id plus its lockfile to a review branch. It refuses to
+# run when the companion manifest already has an id, because a second
+# registration would create an orphan app. GitHub Actions cannot open
+# pull requests in this repository, so PR creation is best-effort and
+# the pushed branch is the deliverable.
+
+on:
+  workflow_dispatch:
+    inputs:
+      appName:
+        description: Forge app name (letters, numbers, spaces, hyphens)
+        required: true
+        default: Argus Bitbucket Canary
+        type: string
+      developerSpaceId:
+        description: Existing UpgradeDev Developer Space id
+        required: true
+        default: dd184132-e3f2-4dac-80c6-61d6e4e11f52
+        type: string
+      acceptTerms:
+        description: Accept Atlassian developer terms for this registration
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: forge-bitbucket-register
+  cancel-in-progress: false
+
+jobs:
+  register:
+    runs-on: ubuntu-latest
+    env:
+      FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
+      FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
+      APP_NAME: ${{ inputs.appName }}
+      DEVELOPER_SPACE_ID: ${{ inputs.developerSpaceId }}
+      ACCEPT_TERMS: ${{ inputs.acceptTerms }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Refuse a second companion registration
+        working-directory: apps/bitbucket
+        run: |
+          if grep -Eq '^[[:space:]]*id:[[:space:]]*ari:cloud:ecosystem::app/' manifest.yml; then
+            echo 'Companion manifest already has an app.id. Refusing an orphan app.'
+            exit 1
+          fi
+
+      - name: Install root and companion dependencies
+        run: |
+          npm ci
+          npm install --global @forge/cli@latest
+
+      - name: Resolve the companion dependency lockfile
+        working-directory: apps/bitbucket
+        run: npm install --package-lock-only --ignore-scripts
+
+      - name: Register the companion app
+        working-directory: apps/bitbucket
+        run: |
+          forge settings set usage-analytics false
+          forge whoami >/dev/null
+          args=("$APP_NAME" --developer-space-id "$DEVELOPER_SPACE_ID")
+          if [ "$ACCEPT_TERMS" = "true" ]; then
+            args+=(--accept-terms)
+          fi
+          forge register "${args[@]}"
+
+      - name: Prove app.id was written and companion lint passes
+        working-directory: apps/bitbucket
+        run: |
+          grep -E '^[[:space:]]*id:[[:space:]]*ari:cloud:ecosystem::app/' manifest.yml
+          forge lint
+
+      - name: Push registration branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git switch -C chore/forge-bitbucket-registration
+          git add apps/bitbucket/manifest.yml apps/bitbucket/package-lock.json apps/bitbucket/package.json
+          git diff --cached --quiet && { echo 'No registration changes to commit.'; exit 1; }
+          git commit -m 'chore(forge): register Argus Bitbucket companion app'
+          git push --force-with-lease origin chore/forge-bitbucket-registration
+          gh pr create \
+            --title 'chore(forge): register Argus Bitbucket companion app' \
+            --body 'Created by the manual companion register workflow after authentication and forge lint. Review the app id and lockfile, then merge before dispatching companion deploy.' \
+            || echo 'Branch pushed. Actions cannot create the PR in this repository; open it from chore/forge-bitbucket-registration.'

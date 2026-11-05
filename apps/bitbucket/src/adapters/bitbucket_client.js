@@ -1,11 +1,17 @@
 'use strict';
 
-// Bitbucket-only Forge client for the companion workspace app.
+// Read-only Bitbucket Forge client for the companion workspace app.
 // Forge cannot mix Bitbucket workspace scopes with Jira site scopes in
 // one installable app, so these route calls deliberately live outside
 // the site app's src/ tree, which Forge lint scans as a whole. Like
 // the site client, package presence without the Forge runtime global
 // is not a live client.
+//
+// The deployed companion only reads: pull request, pipeline file, and
+// branch restrictions. It has no commit or pull-request write method,
+// so its manifest needs no Bitbucket write scope. The admin scope is
+// still unavoidable because Bitbucket requires it even for GET branch
+// restrictions; this file uses it for that one GET only.
 
 const { AdapterHttpError } = require('../../../../src/adapters/atlassian.js');
 
@@ -41,13 +47,6 @@ function makeBitbucketClient(loader = defaultLoader, runtimeGlobal = globalThis)
   if (!api || typeof api.asApp !== 'function' || typeof route !== 'function') return null;
 
   return Object.freeze({
-    async getRepository(workspaceId, repoId) {
-      const response = await api.asApp().requestBitbucket(
-        route`/2.0/repositories/${workspaceId}/${repoId}`,
-      );
-      return unwrapJson(response, `get repository ${workspaceId}/${repoId}`);
-    },
-
     async getPullRequest(workspaceId, repoId, pullRequestId) {
       const response = await api.asApp().requestBitbucket(
         route`/2.0/repositories/${workspaceId}/${repoId}/pullrequests/${pullRequestId}`,
@@ -60,54 +59,6 @@ function makeBitbucketClient(loader = defaultLoader, runtimeGlobal = globalThis)
         route`/2.0/repositories/${workspaceId}/${repoId}/branch-restrictions`,
       );
       return unwrapJson(response, 'get branch restrictions');
-    },
-
-    async getBranch(workspaceId, repoId, branchName) {
-      const response = await api.asApp().requestBitbucket(
-        route`/2.0/repositories/${workspaceId}/${repoId}/refs/branches/${branchName}`,
-      );
-      return unwrapJson(response, `get branch ${branchName}`);
-    },
-
-    async commitTextFile({ workspaceId, repoId, branch, parent, path, content, message }) {
-      const body = new URLSearchParams({
-        message,
-        branch,
-        parents: parent,
-        [`/${String(path).replace(/^\//, '')}`]: content,
-      });
-      const response = await api.asApp().requestBitbucket(
-        route`/2.0/repositories/${workspaceId}/${repoId}/src`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: body.toString(),
-        },
-      );
-      if (response.status < 200 || response.status >= 300) {
-        throw new AdapterHttpError(response.status, `commit ${path} failed`);
-      }
-      return { status: response.status };
-    },
-
-    async createPullRequest({
-      workspaceId, repoId, title, sourceBranch, destinationBranch, description,
-    }) {
-      const response = await api.asApp().requestBitbucket(
-        route`/2.0/repositories/${workspaceId}/${repoId}/pullrequests`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            title,
-            description,
-            close_source_branch: true,
-            source: { branch: { name: sourceBranch } },
-            destination: { branch: { name: destinationBranch } },
-          }),
-        },
-      );
-      return unwrapJson(response, `create pull request ${title}`);
     },
 
     async getRepoFileText(workspaceId, repoId, commit, path) {

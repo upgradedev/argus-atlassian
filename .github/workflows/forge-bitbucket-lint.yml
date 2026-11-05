@@ -1,0 +1,33 @@
+name: Forge Bitbucket companion lint (manual)
+
+# Real Forge lint for the Bitbucket companion app root. It runs from
+# apps/bitbucket/, never from the site app root: Forge lint scans the
+# source tree under the app it is linting.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  companion-lint:
+    env:
+      FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
+      FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/bitbucket
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Silence the first-run analytics consent prompt
+        run: npx -y @forge/cli@latest settings set usage-analytics false
+
+      - name: Forge companion lint
+        run: npx -y @forge/cli@latest lint

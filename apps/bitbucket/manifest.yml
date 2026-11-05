@@ -2,7 +2,7 @@
 #
 # Forge cannot combine Bitbucket workspace scopes with Jira site scopes
 # in one installable app. The site app in the repository root
-# manifest.yml owns JSM, Jira, Compass, Confluence, and Rovo. This
+# manifest.yml owns JSM, Jira, Confluence, and Rovo. This
 # companion owns only the Bitbucket merge check and PR evidence panel.
 # Both call the same deterministic domain core in src/argus/.
 #
@@ -48,12 +48,10 @@ resources:
     path: ../../static/argus-ui/build
 
 permissions:
+  # Read-only by construction: the client exposes three GET methods.
+  # Bitbucket nevertheless requires the admin scope for GET branch
+  # restrictions, which supplies the r13 enforcement fact.
   scopes:
-    - storage:app
-    # Bitbucket requires the admin scope even for GET branch
-    # restrictions, which supplies the r13 enforcement fact.
     - admin:repository:bitbucket
     - read:pullrequest:bitbucket
     - read:repository:bitbucket
-    - write:pullrequest:bitbucket
-    - write:repository:bitbucket
