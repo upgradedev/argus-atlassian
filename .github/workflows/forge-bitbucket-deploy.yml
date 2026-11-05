@@ -77,7 +77,7 @@ jobs:
         working-directory: apps/bitbucket
         run: forge deploy --environment "$FORGE_ENVIRONMENT" --non-interactive --verbose
 
-      - name: Install companion into Bitbucket workspace
+      - name: Install or upgrade companion in Bitbucket workspace
         if: inputs.install
         working-directory: apps/bitbucket
         run: |
@@ -88,9 +88,19 @@ jobs:
             bitbucket.org/*) site="$workspace" ;;
             *) site="bitbucket.org/$workspace" ;;
           esac
+          set +e
           forge install --site "$site" --product Bitbucket \
             --environment "$FORGE_ENVIRONMENT" \
-            --confirm-scopes --non-interactive --verbose
+            --confirm-scopes --non-interactive --verbose 2>&1 | tee /tmp/forge-install.log
+          code=${PIPESTATUS[0]}
+          set -e
+          if [ "$code" -ne 0 ] && grep -qi 'already installed' /tmp/forge-install.log; then
+            forge install --site "$site" --product Bitbucket \
+              --environment "$FORGE_ENVIRONMENT" \
+              --confirm-scopes --non-interactive --verbose --upgrade
+          elif [ "$code" -ne 0 ]; then
+            exit "$code"
+          fi
 
       - name: List companion installations
         working-directory: apps/bitbucket
