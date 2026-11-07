@@ -201,9 +201,112 @@ test('browser bundle executes end-to-end with byte-identical SHA-256 digests, st
   assert.equal(elements.get('rows').children.length, 8);
   elements.get('filter-all').dispatch('click');
   assert.equal(elements.get('rows').children.length, 20);
+  assert.ok(elements.get('agent-log-terminal').children.length > 0);
+  elements.get('drawer-override-btn').dispatch('click');
+  assert.match(elements.get('govern-status').textContent, /Write blocked by digest guard/);
+  elements.get('sync-digest').dispatch('click');
+  assert.match(elements.get('govern-status').textContent, /Digest verified/);
   elements.get('yaml').value = '   ';
   elements.get('repair').dispatch('click');
   assert.match(elements.get('repair-summary').textContent, /The pipeline editor is empty/);
   elements.get('seed-reset').dispatch('click');
   assert.equal(elements.get('passing').textContent, '7/20 rules passing');
+});
+
+test('browser bundle connects end-to-end with Forge Custom UI bridge (__bridge.callBridge) and backend resolver', async () => {
+  const js = read('demo', 'app.js');
+  const { resolver } = require('../src/index.js');
+  const elements = new Map();
+  function makeEl(id = '') {
+    const listeners = new Map();
+    const children = [];
+    let htmlVal = '';
+    return {
+      id,
+      value: '',
+      textContent: '',
+      get innerHTML() { return htmlVal; },
+      set innerHTML(v) { htmlVal = v; if (!v) children.length = 0; },
+      className: '',
+      children,
+      append(...nodes) { children.push(...nodes); },
+      appendChild(node) {
+        children.push(node);
+        if (!this.value && node.value) this.value = node.value;
+      },
+      removeChild(node) {
+        const idx = children.indexOf(node);
+        if (idx >= 0) children.splice(idx, 1);
+      },
+      addEventListener(type, fn) { listeners.set(type, fn); },
+      dispatch(type) {
+        const fn = listeners.get(type);
+        if (fn) fn({ preventDefault() {} });
+      },
+    };
+  }
+  const document = {
+    getElementById(id) {
+      if (!elements.has(id)) elements.set(id, makeEl(id));
+      return elements.get(id);
+    },
+    createElement(tag) { return makeEl(tag); },
+  };
+  document.getElementById('yaml').value = 'pipelines:\n  default:\n    - step:\n        script:\n          - npm test || true\n';
+  document.getElementById('elapsed-seconds').value = '960';
+
+  const bridgeCalls = [];
+  const forgeContext = {
+    accountId: '557058:dimitris-lagos',
+    siteUrl: 'https://upgradegr.atlassian.net',
+    extension: { issue: { key: 'DEMO-11' } },
+  };
+
+  vm.runInNewContext(js, {
+    document,
+    TextEncoder,
+    Uint8Array,
+    Uint32Array,
+    DataView,
+    __bridge: {
+      async callBridge(method, args) {
+        bridgeCalls.push([method, args?.functionKey || 'context']);
+        if (method === 'getContext') return forgeContext;
+        if (method === 'invoke') {
+          return resolver({
+            call: { functionKey: args.functionKey, payload: args.payload || {} },
+            context: forgeContext,
+          });
+        }
+        return null;
+      },
+    },
+  });
+
+  // Allow async bridge promises (getContext -> getArgusStatus -> traceIncidentProvenance -> proposeTypedChange) to settle
+  for (let i = 0; i < 6; i += 1) {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+
+  assert.ok(bridgeCalls.some(([m]) => m === 'getContext'));
+  assert.ok(bridgeCalls.some(([m, fn]) => m === 'invoke' && fn === 'getArgusStatus'));
+  assert.ok(bridgeCalls.some(([m, fn]) => m === 'invoke' && fn === 'traceIncidentProvenance'));
+  assert.ok(bridgeCalls.some(([m, fn]) => m === 'invoke' && fn === 'proposeTypedChange'));
+  assert.match(elements.get('runtime-status').textContent, /connected to live Forge resolver/);
+  assert.match(elements.get('change-id').textContent, /^proposal-DEMO-11-r01-/);
+
+  // Submit governance form -> invokes escalateStandbyResponder on backend resolver
+  elements.get('govern-form').dispatch('submit');
+  for (let i = 0; i < 4; i += 1) {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  assert.ok(bridgeCalls.some(([m, fn]) => m === 'invoke' && fn === 'escalateStandbyResponder'));
+  assert.match(elements.get('govern-status').textContent, /Digest verified against proposal-DEMO-11-r01-/);
+
+  // Submit pipeline form -> invokes evaluatePipeline on backend resolver
+  elements.get('run').dispatch('submit');
+  for (let i = 0; i < 4; i += 1) {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  assert.ok(bridgeCalls.some(([m, fn]) => m === 'invoke' && fn === 'evaluatePipeline'));
 });

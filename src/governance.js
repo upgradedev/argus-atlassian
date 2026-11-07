@@ -287,12 +287,34 @@ function createGovernance({
         });
       }
 
-      const result = await writer.escalateWithApproval(
-        change,
-        approvalDigest,
-        envelope.issueKey,
-        selected.accountId,
-      );
+      let assignedAccountId = selected.accountId;
+      let result;
+      try {
+        result = await writer.escalateWithApproval(
+          change,
+          approvalDigest,
+          envelope.issueKey,
+          assignedAccountId,
+        );
+      } catch (writeErr) {
+        if (
+          typeof writeErr?.status === 'number'
+          && assignedAccountId.startsWith('acc-')
+          && approvedBy
+          && !approvedBy.startsWith('acc-')
+          && approvedBy !== 'unknown-approver'
+        ) {
+          assignedAccountId = approvedBy;
+          result = await writer.escalateWithApproval(
+            change,
+            approvalDigest,
+            envelope.issueKey,
+            assignedAccountId,
+          );
+        } else {
+          throw writeErr;
+        }
+      }
       const receipt = receiptToPlain(buildReceipt(
         change.digest(),
         approvedBy || 'unknown-approver',
@@ -304,12 +326,12 @@ function createGovernance({
         ...envelope,
         status: 'executed',
         executedAt,
-        assignedTo: selected.accountId,
+        assignedTo: assignedAccountId,
         receipt,
         shield: shieldReport,
         executions: {
           ...(envelope.executions ?? {}),
-          escalation: { assignedTo: selected.accountId, executedAt, receipt },
+          escalation: { assignedTo: assignedAccountId, executedAt, receipt },
         },
       };
       await store.set(`proposal:${envelope.changeId}`, executedEnvelope);
@@ -321,13 +343,15 @@ function createGovernance({
         changeId: envelope.changeId,
         digest: change.digest(),
         issueKey: envelope.issueKey,
-        assignedTo: selected.accountId,
+        assignedTo: assignedAccountId,
         escalated: selected.escalated,
         shield: shieldReport,
         receipt,
       });
     } catch (err) {
-      if (err instanceof ArgusError) return refused(err.message, { error: err.name });
+      if (err instanceof ArgusError || typeof err?.status === 'number') {
+        return refused(err.message, { error: err.name });
+      }
       throw err;
     }
   }

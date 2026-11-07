@@ -14,29 +14,33 @@
   <aside class="sidebar" aria-label="Argus navigation">
     <div class="sidebar-brand">
       <div class="brand-logo" aria-hidden="true">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
           <path d="M12 3L2 21H22L12 3Z" stroke="#ffffff" stroke-width="2" stroke-linejoin="round"/>
-          <circle cx="12" cy="14" r="3" fill="#10b981"/>
+          <circle cx="12" cy="14" r="3" fill="#34d399"/>
         </svg>
       </div>
       <div class="brand-text">
         <span class="brand-title">ARGUS</span>
-        <span class="brand-sub">upgradegr · Forge</span>
+        <span class="brand-sub">Dark Factory · Forge</span>
       </div>
     </div>
 
-    <div class="nav-section-label">Command Views</div>
+    <div class="nav-section-label">Operational Views</div>
     <nav class="nav-list" aria-label="Workspace sections">
       <button id="nav-all" class="nav-btn active" type="button">
         <span>Command Center (All)</span>
         <span class="nav-badge ok">Live</span>
       </button>
+      <button id="nav-agents" class="nav-btn" type="button">
+        <span>View 1: Agentic Loop</span>
+        <span class="nav-badge">4 daemons</span>
+      </button>
       <button id="nav-posture" class="nav-btn" type="button">
-        <span>DevSecOps Posture</span>
-        <span class="nav-badge">4 stages</span>
+        <span>View 2: Dark Factory</span>
+        <span class="nav-badge">6 nodes</span>
       </button>
       <button id="nav-workbench" class="nav-btn" type="button">
-        <span>Pipeline &amp; Canary</span>
+        <span>View 3: DevSecOps Diff</span>
         <span id="nav-fail-badge" class="nav-badge alert">13 fail</span>
       </button>
       <button id="nav-provenance" class="nav-btn" type="button">
@@ -44,7 +48,7 @@
         <span class="nav-badge ok">7/7</span>
       </button>
       <button id="nav-governance" class="nav-btn" type="button">
-        <span>Change Gate &amp; Receipts</span>
+        <span>Change Gate &amp; Vault</span>
         <span class="nav-badge">SHA-256</span>
       </button>
     </nav>
@@ -52,15 +56,15 @@
     <div class="sidebar-telemetry" aria-label="Atlassian Forge runtime telemetry">
       <div class="telem-row">
         <span class="telem-key">Tenant</span>
-        <span class="telem-val">upgradegr.atlassian.net</span>
+        <span id="telem-tenant" class="telem-val">upgradegr.atlassian.net</span>
       </div>
       <div class="telem-row">
         <span class="telem-key">Active Incident</span>
-        <span class="telem-val">DEMO-11 (P1)</span>
+        <span id="telem-incident" class="telem-val">DEMO-11 (P1)</span>
       </div>
       <div class="telem-row">
         <span class="telem-key">State Store</span>
-        <span class="telem-val">Forge KVS</span>
+        <span id="telem-store" class="telem-val">Forge KVS</span>
       </div>
       <div class="telem-row">
         <span class="telem-key">Network Egress</span>
@@ -72,7 +76,7 @@
   <div class="shell-body">
     <header class="topbar" role="banner">
       <div class="topbar-left">
-        <span class="pill pill-incident"><span class="pulse-dot"></span>JSM P1 · DEMO-11</span>
+        <span id="topbar-incident-pill" class="pill pill-incident"><span class="pulse-dot"></span>JSM P1 · DEMO-11</span>
         <span class="pill pill-mono">repo: upgradegr/payments-service</span>
         <span class="pill pill-warn">Pipeline #482 · Fake-Green Detected</span>
       </div>
@@ -96,8 +100,65 @@
         directly in your browser. It does not connect to your Atlassian site and sends nothing anywhere.</p>
       </section>
 
-      <!-- ZONE 1: Metabase DevSecOps Posture & Stage Analytics -->
-      <section id="zone-posture" class="zone-section" aria-label="DevSecOps posture metrics and stage breakdown">
+      <!-- VIEW 1: The Autonomous Agentic Loop (Agents + Live Monospace Stream Terminal) -->
+      <section id="zone-agents" class="zone-section" aria-label="Autonomous agentic loop and live execution terminal">
+        <div class="grid-2col">
+          <div class="panel" aria-label="Running autonomous Argus agents">
+            <div class="panel-head">
+              <h2>View 1 · Autonomous Agentic DevOps Loop</h2>
+              <span class="pill pill-cyan"><span class="pulse-dot"></span>4 Active Daemons</span>
+            </div>
+            <div class="agent-grid">
+              <div class="agent-card state-exec" data-agent-uuid="agt-rovo-01">
+                <div class="agent-card-top">
+                  <span class="agent-name">argus-incident-governor</span>
+                  <span id="agent-status-rovo" class="pill pill-cyan"><span class="pulse-dot"></span>ACTIVE</span>
+                </div>
+                <span class="agent-uuid">uuid: agt-rovo-01 · surface: rovo:agent + rovo:mcp</span>
+                <p id="agent-goal-rovo" class="agent-goal">Current Goal: Walking provenance thread DEMO-11 -&gt; deploy-prod-482 -&gt; commit-9f2c41e.</p>
+              </div>
+
+              <div class="agent-card state-alert" data-agent-uuid="agt-canary-02">
+                <div class="agent-card-top">
+                  <span class="agent-name">elenchos-canary-verifier</span>
+                  <span id="agent-status-canary" class="pill pill-incident"><span class="pulse-dot"></span>EXIT 1</span>
+                </div>
+                <span class="agent-uuid">uuid: agt-canary-02 · surface: rovo:skill (r01-r20)</span>
+                <p id="agent-goal-canary" class="agent-goal">Current Goal: 13/20 fake-green pipeline rules failing; 5 deterministic YAML repairs synthesized.</p>
+              </div>
+
+              <div class="agent-card state-warn" data-agent-uuid="agt-shield-03">
+                <div class="agent-card-top">
+                  <span class="agent-name">lachesis-policy-shield</span>
+                  <span id="agent-status-shield" class="pill pill-warn"><span class="pulse-dot"></span>CONFIRM</span>
+                </div>
+                <span class="agent-uuid">uuid: agt-shield-03 · surface: PolicyShield + Threefold</span>
+                <p id="agent-goal-shield" class="agent-goal">Current Goal: Enforcing SHA-256 TypedChangeIR digest guard before any Jira/Bitbucket write.</p>
+              </div>
+
+              <div class="agent-card state-ok" data-agent-uuid="agt-standby-04">
+                <div class="agent-card-top">
+                  <span class="agent-name">volcan-standby-daemon</span>
+                  <span id="agent-status-standby" class="pill pill-live"><span class="pulse-dot"></span>SEALED</span>
+                </div>
+                <span class="agent-uuid">uuid: agt-standby-04 · surface: StandbyRoster + Aletheia</span>
+                <p id="agent-goal-standby" class="agent-goal">Current Goal: Monitoring 900s JSM on-call SLA window and emitting Spoken + Braille Merkle receipts.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel" aria-label="Agent thought and execution log terminal">
+            <div class="panel-head">
+              <h2>Agent Thought &amp; Execution Log Terminal</h2>
+              <span id="bridge-mode-pill" class="pill pill-mono">stream: deterministic + forge-bridge</span>
+            </div>
+            <div id="agent-log-terminal" class="stream-terminal" role="log" aria-live="polite" aria-label="Live JSON agent execution stream"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- VIEW 2A: DevSecOps Posture, Dark Factory Topology & Stage Analytics -->
+      <section id="zone-posture" class="zone-section" aria-label="DevSecOps posture metrics, dark factory topology, and stage breakdown">
         <div class="kpi-ribbon">
           <div class="kpi-card band-critical">
             <div class="kpi-head">
@@ -123,7 +184,7 @@
               <span class="kpi-label">SupportTrace Evidence</span>
               <span class="kpi-band ok">Grounded</span>
             </div>
-            <div class="kpi-value">7/7 Sources</div>
+            <div id="kpi-evidence-count" class="kpi-value">7/7 Sources</div>
             <div class="kpi-sub">Data · Identity · Events · Pipeline · Config · Logs · Edge</div>
           </div>
 
@@ -143,6 +204,49 @@
             </div>
             <div id="kpi-sla-timer" class="kpi-value">0s / 900s</div>
             <div id="kpi-sla-sub" class="kpi-sub">Within SLA -&gt; Primary SRE active</div>
+          </div>
+        </div>
+
+        <div class="panel" aria-label="Dark factory live node topology">
+          <div class="panel-head">
+            <h2>View 2 · Dark Factory &amp; Atlassian Node Topology</h2>
+            <div class="actions">
+              <button id="action-isolate-node" class="danger-btn" type="button">Isolate Compromised Node</button>
+              <button id="action-auto-patch" type="button">Approve Auto-Patch (5 Rules)</button>
+              <button id="action-scale-failover" class="secondary" type="button">Scale Cluster / Failover SRE</button>
+            </div>
+          </div>
+          <div class="topology-nodes" aria-label="Headless autonomous service topology">
+            <div class="topo-node node-cyan">
+              <span class="topo-title">1. Bitbucket Commit</span>
+              <span id="topo-commit-id" class="topo-metric">sha: commit-9f2c41e</span>
+              <span class="topo-metric">branch: main · depth: 1</span>
+            </div>
+            <div id="topo-pipeline-node" class="topo-node node-crit">
+              <span class="topo-title">2. Pipeline Runner #482</span>
+              <span id="topo-pipeline-status" class="topo-metric">verdict: exit 1 (13 fail)</span>
+              <span class="topo-metric">mem: 4096 MB · timeout: 10m</span>
+            </div>
+            <div class="topo-node node-crit">
+              <span class="topo-title">3. JSM Incident Gate</span>
+              <span id="topo-incident-id" class="topo-metric">key: DEMO-11 (P1)</span>
+              <span id="topo-incident-status" class="topo-metric">status: Open · SLA: 900s</span>
+            </div>
+            <div class="topo-node node-ok">
+              <span class="topo-title">4. SupportTrace Graph</span>
+              <span id="topo-evidence-status" class="topo-metric">sources: 7/7 grounded</span>
+              <span class="topo-metric">egress: 0 external hosts</span>
+            </div>
+            <div class="topo-node node-warn">
+              <span class="topo-title">5. Forge KVS Vault</span>
+              <span id="topo-kvs-status" class="topo-metric">store: proposal-DEMO-11</span>
+              <span class="topo-metric">guard: SHA-256 verifyBeforeWrite</span>
+            </div>
+            <div class="topo-node node-ok">
+              <span class="topo-title">6. On-Call SRE Node</span>
+              <span id="topo-sre-status" class="topo-metric">active: Dimitris Lagos</span>
+              <span class="topo-metric">receipt: Spoken + Braille</span>
+            </div>
           </div>
         </div>
 
@@ -249,12 +353,68 @@
         </div>
       </section>
 
-      <!-- ZONE 2: Signal DevOps Terminal Workbench & 20-Rule Matrix -->
+      <!-- VIEW 2B: Provenance Thread, 7-Source SupportTrace & PolicyShield -->
+      <section id="zone-provenance" class="zone-section" aria-label="Incident provenance and evidence graph">
+        <div class="panel" aria-label="Provenance thread for incident DEMO-11">
+          <div class="panel-head">
+            <h2>Incident Provenance Graph, 7-Source Evidence &amp; PolicyShield Guardrail</h2>
+            <span class="pill pill-live">SHA-256 Sealed Chain</span>
+          </div>
+
+          <div class="prov-nodes-grid" aria-label="Provenance nodes from commit to incident">
+            <div class="prov-node-card">
+              <span class="prov-node-type">1. Offending Commit (Root Cause)</span>
+              <span id="prov-node-1-id" class="prov-node-id">commit-9f2c41e</span>
+              <span class="prov-node-meta">Actor: dev-alex · 2026-11-05T03:20:00Z</span>
+              <span class="prov-node-meta">Mask npm test exit code in bitbucket-pipelines.yml</span>
+            </div>
+            <div class="prov-node-card">
+              <span class="prov-node-type">2. Fake-Green Pipeline Run</span>
+              <span id="prov-node-2-id" class="prov-node-id">deploy-prod-482</span>
+              <span class="prov-node-meta">Actor: bitbucket-pipelines · 2026-11-05T03:25:00Z</span>
+              <span class="prov-node-meta">Bitbucket Pipeline #482 reported green</span>
+            </div>
+            <div class="prov-node-card">
+              <span class="prov-node-type">3. JSM Production Outage</span>
+              <span id="prov-node-3-id" class="prov-node-id">DEMO-11</span>
+              <span id="prov-node-3-actor" class="prov-node-meta">Actor: jsm-trigger · 2026-11-05T03:32:24Z</span>
+              <span id="prov-node-3-summary" class="prov-node-meta">JSM P1 checkout outage after green release</span>
+            </div>
+          </div>
+
+          <div class="evidence-pills" aria-label="Seven SupportTrace evidence sources">
+            <span class="ev-pill">1. DATA: JSM DEMO-11</span>
+            <span class="ev-pill">2. IDENTITY: SRE Roster</span>
+            <span class="ev-pill">3. EVENTS: Issue Webhook</span>
+            <span class="ev-pill">4. PIPELINE: Bitbucket YAML</span>
+            <span class="ev-pill">5. CONFIG: Branch Policy</span>
+            <span class="ev-pill">6. LOGS: Canary Exit Log</span>
+            <span class="ev-pill">7. EDGE: Zero-Egress Boundary</span>
+          </div>
+
+          <div class="card">
+            <dl>
+              <dt>Provenance walk (JSM incident back to commit)</dt>
+              <dd id="prov-chain" class="mono"></dd>
+              <dt>Root cause node</dt>
+              <dd id="prov-root" class="mono"></dd>
+              <dt>SHA-256 provenance seal</dt>
+              <dd id="prov-seal" class="mono"></dd>
+              <dt>SupportTrace 7-source evidence graph</dt>
+              <dd id="evidence-summary"></dd>
+              <dt>Threefold and Lachesis pre-tool policy shield</dt>
+              <dd id="shield-summary"></dd>
+            </dl>
+          </div>
+        </div>
+      </section>
+
+      <!-- VIEW 3A: DevSecOps Deep-Dive, Code Diff & 20-Rule Matrix -->
       <section id="zone-workbench" class="zone-section" aria-label="Pipeline editor, deterministic repair diff, and rule results">
         <div class="workbench-grid">
           <div class="panel">
             <div class="panel-head">
-              <h2>Bitbucket Pipeline Canary Workbench</h2>
+              <h2>View 3 · Bitbucket Pipeline Canary Workbench</h2>
               <span class="pill pill-mono">bitbucket-pipelines.yml</span>
             </div>
             <form id="run">
@@ -319,6 +479,29 @@ pipelines:
                 <tbody id="rows"></tbody>
               </table>
             </div>
+
+            <!-- Slide-Out Security Event & Rule Inspector Drawer -->
+            <div id="rule-inspector-drawer" class="inspector-drawer" aria-label="Security event details and agent override drawer">
+              <div class="panel-head">
+                <h3 id="drawer-rule-title">Inspector · r01: Masked test exit code</h3>
+                <span id="drawer-rule-badge" class="pill pill-cyan">TypedChangeIR Ready</span>
+              </div>
+              <div class="inspector-grid">
+                <div>
+                  <dt>Detected Vulnerability / Pipeline Fact</dt>
+                  <dd id="drawer-fact-detail" class="mono">test.masked_exit = true (bitbucket-pipelines.yml)</dd>
+                </div>
+                <div>
+                  <dt>Autonomous Agent Proposed Fix (TypedChangeIR)</dt>
+                  <dd id="drawer-rule-ops" class="mono">SET_CONFIG bitbucket-pipelines.yml: test.masked_exit=false</dd>
+                </div>
+              </div>
+              <div class="actions">
+                <button id="drawer-patch-btn" type="button">Approve &amp; Apply Deterministic Fix</button>
+                <button id="drawer-override-btn" class="danger-btn" type="button">Override Agent (Tamper Digest Block)</button>
+              </div>
+            </div>
+
             <p class="note">Exit 1 means at least one rule failed on these facts. Exit 0 means all
             twenty passed on the facts the extractor could see. One fact, required merge check
             enforcement (r13), lives in Bitbucket branch restrictions, not in this file, so here
@@ -329,63 +512,7 @@ pipelines:
         </div>
       </section>
 
-      <!-- ZONE 3: Provenance Thread, 7-Source SupportTrace & PolicyShield -->
-      <section id="zone-provenance" class="zone-section" aria-label="Incident provenance and evidence graph">
-        <div class="panel" aria-label="Provenance thread for incident DEMO-11">
-          <div class="panel-head">
-            <h2>Incident Provenance Graph, 7-Source Evidence &amp; PolicyShield Guardrail</h2>
-            <span class="pill pill-live">SHA-256 Sealed Chain</span>
-          </div>
-
-          <div class="prov-nodes-grid" aria-label="Provenance nodes from commit to incident">
-            <div class="prov-node-card">
-              <span class="prov-node-type">1. Offending Commit (Root Cause)</span>
-              <span class="prov-node-id">commit-9f2c41e</span>
-              <span class="prov-node-meta">Actor: dev-alex · 2026-11-05T03:20:00Z</span>
-              <span class="prov-node-meta">Mask npm test exit code in bitbucket-pipelines.yml</span>
-            </div>
-            <div class="prov-node-card">
-              <span class="prov-node-type">2. Fake-Green Pipeline Run</span>
-              <span class="prov-node-id">deploy-prod-482</span>
-              <span class="prov-node-meta">Actor: bitbucket-pipelines · 2026-11-05T03:25:00Z</span>
-              <span class="prov-node-meta">Bitbucket Pipeline #482 reported green</span>
-            </div>
-            <div class="prov-node-card">
-              <span class="prov-node-type">3. JSM Production Outage</span>
-              <span class="prov-node-id">DEMO-11</span>
-              <span class="prov-node-meta">Actor: jsm-trigger · 2026-11-05T03:32:24Z</span>
-              <span class="prov-node-meta">JSM P1 checkout outage after green release</span>
-            </div>
-          </div>
-
-          <div class="evidence-pills" aria-label="Seven SupportTrace evidence sources">
-            <span class="ev-pill">1. DATA: JSM DEMO-11</span>
-            <span class="ev-pill">2. IDENTITY: SRE Roster</span>
-            <span class="ev-pill">3. EVENTS: Issue Webhook</span>
-            <span class="ev-pill">4. PIPELINE: Bitbucket YAML</span>
-            <span class="ev-pill">5. CONFIG: Branch Policy</span>
-            <span class="ev-pill">6. LOGS: Canary Exit Log</span>
-            <span class="ev-pill">7. EDGE: Zero-Egress Boundary</span>
-          </div>
-
-          <div class="card">
-            <dl>
-              <dt>Provenance walk (JSM incident back to commit)</dt>
-              <dd id="prov-chain" class="mono"></dd>
-              <dt>Root cause node</dt>
-              <dd id="prov-root" class="mono"></dd>
-              <dt>SHA-256 provenance seal</dt>
-              <dd id="prov-seal" class="mono"></dd>
-              <dt>SupportTrace 7-source evidence graph</dt>
-              <dd id="evidence-summary"></dd>
-              <dt>Threefold and Lachesis pre-tool policy shield</dt>
-              <dd id="shield-summary"></dd>
-            </dl>
-          </div>
-        </div>
-      </section>
-
-      <!-- ZONE 4: Typed Change IR, Fail-Closed Digest Gate, Standby SLA & Braille Receipt -->
+      <!-- VIEW 3B: Typed Change IR, Fail-Closed Digest Gate, Standby SLA & Braille Receipt -->
       <section id="zone-governance" class="zone-section" aria-labelledby="gov-heading">
         <div class="panel">
           <div class="panel-head">
